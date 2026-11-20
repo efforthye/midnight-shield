@@ -1,6 +1,6 @@
 {
   "name": "midnight-shield",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Static analyzer for Midnight Compact contracts and their TypeScript code. Finds security and privacy issues before deploy.",
   "keywords": [
     "midnight",

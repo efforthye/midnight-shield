@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-20
+
 ### Added
 
 - **Privacy diff on pull requests.** `midnight-shield snapshot` saves findings and the disclosure map; `midnight-shield diff base.json head.json` shows what a change newly makes public, protections that got weaker, and new and fixed findings (`--format text|markdown|json`, `--fail-on` for new findings only). The GitHub Action comments it on every pull request and updates the same comment as you push (`pr-comment`, on by default).

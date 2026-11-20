@@ -2,7 +2,7 @@ import type { DisclosureEntry, Finding } from "./linter.js";
 import { suggestionDiff } from "./suggest.js";
 import { RULES, SEVERITY_ORDER, ruleDocUrl, type RuleMeta, type Severity } from "./rules.js";
 
-export const VERSION = "0.5.0";
+export const VERSION = "0.6.0";
 
 const COLORS: Record<Severity, string> = {
   critical: "\x1b[35m",
