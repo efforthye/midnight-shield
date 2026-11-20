@@ -1,15 +1,18 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
-import { Analyzer, type ImportResolver } from "./analyzer.js";
+import { Analyzer, type DisclosureEvent, type ImportResolver, type RawFinding } from "./analyzer.js";
 import type { Program } from "./ast.js";
+import { pragmaFix, type TextEdit } from "./fixes.js";
 import { lex } from "./lexer.js";
 import { parse } from "./parser.js";
-import { RULES_BY_ID, SEVERITY_ORDER, ruleDocUrl, type Severity } from "./rules.js";
+import { runCustomRule, type CustomRule } from "./plugins.js";
+import { isSdkFile, isTestFile, lintSdkSource } from "./sdk.js";
+import { CONFIDENCE_ORDER, RULES_BY_ID, SEVERITY_ORDER, ruleDocUrl, type Confidence, type RuleMeta, type Severity } from "./rules.js";
 
 export interface Finding {
   ruleId: string;
   ruleName: string;
   severity: Severity;
+  /** how sure the rule is that this is a real problem */
+  confidence: Confidence;
   message: string;
   file: string;
   line: number;
@@ -17,6 +20,12 @@ export interface Finding {
   docUrl: string;
   /** the source line the finding points at */
   snippet: string;
+  /** stable ID that survives unrelated edits (used by baselines) */
+  fingerprint: string;
+  /** set when the finding is hidden by an inline comment or a baseline */
+  suppressed?: "inline" | "baseline";
+  /** a safe automatic fix, when one exists */
+  fix?: TextEdit;
 }
 
 export interface LintOptions {
@@ -24,12 +33,22 @@ export interface LintOptions {
   disable?: string[];
   /** only report findings at or above this severity */
   minSeverity?: Severity;
+  /** only report findings at or above this confidence */
+  minConfidence?: Confidence;
   /** glob patterns of files to skip, e.g. "**\/test/**" */
   ignore?: string[];
   /** resolves `import "path"` so imported circuits are followed */
   resolver?: ImportResolver;
   /** absolute path of the file, used to resolve relative imports */
   absolutePath?: string;
+  /** custom rules loaded from plugins */
+  plugins?: CustomRule[];
+  /** fingerprints of accepted findings (from a baseline file) */
+  baseline?: Set<string>;
+  /** also return suppressed findings, marked with `suppressed` */
+  includeSuppressed?: boolean;
+  /** also check TypeScript/JavaScript files (MS101, MS102); default true */
+  sdk?: boolean;
 }
 
 const DIRECTIVE = /shield-disable(-next-line|-line|-file)?\b([^\n]*)/;
@@ -40,7 +59,7 @@ interface Suppressions {
 }
 
 function parseIds(rest: string): Set<string> | "all" {
-  const ids = rest.match(/MS\d{3}/g);
+  const ids = rest.match(/\b[A-Z][A-Z0-9]*\d{3}\b/g);
   return ids && ids.length ? new Set(ids) : "all";
 }
 
@@ -68,101 +87,126 @@ function isSuppressed(s: Suppressions, ruleId: string, line: number): boolean {
   return match(s.file) || match(s.lines.get(line));
 }
 
-export function lintSource(source: string, file = "contract.compact", options: LintOptions = {}): Finding[] {
+/** Fingerprint = rule + file + the trimmed source line + occurrence index, so moving code up or down keeps it stable. */
+function fingerprint(ruleId: string, file: string, snippet: string, occurrence: number): string {
+  return hash53(`${ruleId}|${file}|${snippet.trim()}|${occurrence}`);
+}
+
+/** cyrb53: a small, fast, well-distributed 53-bit string hash (no Node APIs, so it also runs in the browser). */
+function hash53(str: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, "0");
+}
+
+function metaFor(ruleId: string, plugins: CustomRule[] = []): RuleMeta {
+  return RULES_BY_ID.get(ruleId) ?? plugins.find((p) => p.id === ruleId)!;
+}
+
+interface Analysis {
+  program?: Program;
+  analyzer?: Analyzer;
+  raw: RawFinding[];
+}
+
+function analyze(source: string, file: string, options: LintOptions): Analysis {
+  if (isSdkFile(file)) return { raw: isTestFile(file) ? [] : lintSdkSource(source) };
   const program = parse(source);
-  const raw = new Analyzer(program, options.resolver, options.absolutePath).run();
+  const analyzer = new Analyzer(program, options.resolver, options.absolutePath);
+  const raw = analyzer.run();
+  for (const rule of options.plugins ?? []) raw.push(...runCustomRule(rule, file, source, program));
+  return { program, analyzer, raw };
+}
+
+export function lintSource(source: string, file = "contract.compact", options: LintOptions = {}): Finding[] {
+  const { raw } = analyze(source, file, options);
+  return toFindings(raw, source, file, options);
+}
+
+function toFindings(raw: RawFinding[], source: string, file: string, options: LintOptions): Finding[] {
   const lines = source.split(/\r?\n/);
   const suppressions = collectSuppressions(source);
   const disabled = new Set(options.disable ?? []);
   const minRank = SEVERITY_ORDER.indexOf(options.minSeverity ?? "info");
+  const minConf = CONFIDENCE_ORDER.indexOf(options.minConfidence ?? "low");
+  const occurrences = new Map<string, number>();
 
-  return raw
+  const all: Finding[] = raw
     .filter((f) => !disabled.has(f.ruleId))
     .filter((f) => SEVERITY_ORDER.indexOf(f.severity) <= minRank)
-    .filter((f) => !isSuppressed(suppressions, f.ruleId, f.loc.line))
-    .map((f) => ({
-      ruleId: f.ruleId,
-      ruleName: RULES_BY_ID.get(f.ruleId)!.name,
-      severity: f.severity,
-      message: f.message,
-      file,
-      line: f.loc.line,
-      col: f.loc.col,
-      docUrl: ruleDocUrl(f.ruleId),
-      snippet: lines[f.loc.line - 1] ?? "",
-    }))
-    .sort((a, b) => a.line - b.line || a.col - b.col);
+    .filter((f) => CONFIDENCE_ORDER.indexOf(f.confidence) <= minConf)
+    .sort((a, b) => a.loc.line - b.loc.line || a.loc.col - b.loc.col)
+    .map((f) => {
+      const meta = metaFor(f.ruleId, options.plugins);
+      const snippet = lines[f.loc.line - 1] ?? "";
+      const key = `${f.ruleId}|${snippet.trim()}`;
+      const n = occurrences.get(key) ?? 0;
+      occurrences.set(key, n + 1);
+      const finding: Finding = {
+        ruleId: f.ruleId,
+        ruleName: meta.name,
+        severity: f.severity,
+        confidence: f.confidence,
+        message: f.message,
+        file,
+        line: f.loc.line,
+        col: f.loc.col,
+        docUrl: ruleDocUrl(f.ruleId, meta),
+        snippet,
+        fingerprint: fingerprint(f.ruleId, file, snippet, n),
+      };
+      if (f.ruleId === "MS006") finding.fix = pragmaFix(source);
+      if (isSuppressed(suppressions, f.ruleId, f.loc.line)) finding.suppressed = "inline";
+      else if (options.baseline?.has(finding.fingerprint)) finding.suppressed = "baseline";
+      return finding;
+    });
+
+  return options.includeSuppressed ? all : all.filter((f) => !f.suppressed);
 }
 
-const IGNORED_DIRS = new Set(["node_modules", ".git", "dist", "build", "managed"]);
+export interface DisclosureEntry extends DisclosureEvent {
+  file: string;
+  snippet: string;
+  /** rule IDs reported on the same line */
+  findings: string[];
+}
 
-export function findCompactFiles(paths: string[]): string[] {
-  const out: string[] = [];
-  const walk = (p: string) => {
-    const st = statSync(p);
-    if (st.isDirectory()) {
-      for (const name of readdirSync(p).sort()) {
-        if (IGNORED_DIRS.has(name) || name.startsWith(".")) continue;
-        walk(join(p, name));
-      }
-    } else if (p.endsWith(".compact")) {
-      out.push(p);
-    }
+/** List every point where data becomes public in a file (the disclosure map). */
+export function mapDisclosures(source: string, file = "contract.compact", options: LintOptions = {}): DisclosureEntry[] {
+  const { analyzer, raw } = analyze(source, file, options);
+  if (!analyzer) return [];
+  const lines = source.split(/\r?\n/);
+  return analyzer.getDisclosures().map((d) => ({
+    ...d,
+    file,
+    snippet: lines[d.loc.line - 1] ?? "",
+    findings: [...new Set(raw.filter((f) => f.loc.line === d.loc.line && f.ruleId !== "MS000").map((f) => f.ruleId))].sort(),
+  }));
+}
+
+
+// ---------- baselines ----------
+
+export interface BaselineFile {
+  tool: "midnight-shield";
+  version: 1;
+  findings: { fingerprint: string; ruleId: string; file: string; line: number; message: string }[];
+}
+
+export function createBaseline(findings: Finding[]): BaselineFile {
+  return {
+    tool: "midnight-shield",
+    version: 1,
+    findings: findings
+      .filter((f) => f.suppressed !== "inline")
+      .map((f) => ({ fingerprint: f.fingerprint, ruleId: f.ruleId, file: f.file, line: f.line, message: f.message })),
   };
-  for (const p of paths) walk(p);
-  return out;
 }
 
-/** Resolve imports from disk, relative to the importing file. Parsed files are cached. */
-export function fileImportResolver(): ImportResolver {
-  const cache = new Map<string, Program | null>();
-  return (fromFile, target) => {
-    const base = fromFile ? dirname(fromFile) : process.cwd();
-    for (const candidate of [`${target}.compact`, target]) {
-      const abs = resolve(base, candidate);
-      if (!cache.has(abs)) {
-        cache.set(abs, existsSync(abs) && statSync(abs).isFile() ? parse(readFileSync(abs, "utf8")) : null);
-      }
-      const program = cache.get(abs);
-      if (program) return { file: abs, program };
-    }
-    return undefined;
-  };
-}
-
-/** Convert a glob (`*`, `**`, `?`) to a RegExp matched against forward-slash paths. */
-export function globToRegExp(glob: string): RegExp {
-  let re = "";
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob[i];
-    if (c === "*") {
-      if (glob[i + 1] === "*") {
-        re += ".*";
-        i++;
-        if (glob[i + 1] === "/") i++;
-      } else re += "[^/]*";
-    } else if (c === "?") re += "[^/]";
-    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  }
-  return new RegExp(`^${re}$`);
-}
-
-/** The .compact files that will be scanned: found under `paths`, minus `ignore` globs. */
-export function listTargetFiles(paths: string[], ignore: string[] = [], cwd = process.cwd()): string[] {
-  const res = ignore.map(globToRegExp);
-  return findCompactFiles(paths).filter((file) => {
-    const rel = relative(cwd, file).split("\\").join("/");
-    return !res.some((re) => re.test(rel));
-  });
-}
-
-export function lintFiles(paths: string[], options: LintOptions = {}, cwd = process.cwd()): Finding[] {
-  const findings: Finding[] = [];
-  const resolver = options.resolver ?? fileImportResolver();
-  for (const file of listTargetFiles(paths, options.ignore, cwd)) {
-    const rel = relative(cwd, file).split("\\").join("/");
-    const source = readFileSync(file, "utf8");
-    findings.push(...lintSource(source, rel, { ...options, resolver, absolutePath: resolve(file) }));
-  }
-  return findings;
-}
