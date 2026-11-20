@@ -27,6 +27,14 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 
 ---
 
+## What's new
+
+- 🔁 **[Privacy diff on pull requests](#privacy-diff)**: the GitHub Action comments what a change newly makes public, and which findings it adds or fixes.
+- 🏷️ **[Status badge](#status-badge)** for your README: `verified` when clean, otherwise the number of findings in red, orange or yellow.
+- 🩹 **[Suggested fixes](#3-fix-and-scan-again)**: every finding shows the flagged line rewritten, as a diff you can copy.
+- 🧩 **[3 new rules](#rules)**: [MS011](docs/rules/MS011.md) owner change without a caller check, [MS103](docs/rules/MS103.md) seed in the source, [MS104](docs/rules/MS104.md) private state in `localStorage`.
+- 🌐 **[Scan a whole repository](#web-playground)** in the playground, or open a local folder.
+
 ## Why Midnight Shield?
 
 The Compact compiler already stops you from disclosing witness data by accident. But a contract can **compile cleanly and still leak or be exploitable**:
