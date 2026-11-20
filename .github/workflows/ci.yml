@@ -7,18 +7,59 @@ on:
 
 jobs:
   test:
+    name: Tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - run: npm test
+
+  # Scans real Compact code (official examples and OpenZeppelin Contracts for
+  # Compact) at pinned commits and compares the results with verify/baseline.json.
+  verify:
+    name: Corpus verification
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - run: npm ci
-      - run: npm test
+      - run: npm run verify
+
+  # Compiles the example contracts with the real Compact compiler, so the
+  # examples in this repo are valid Compact, not just valid for our parser.
+  compile-examples:
+    name: Compile examples with Compact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Compact developer tool
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh \
+            | COMPACT_INSTALL_DIR="$HOME/compact" INSTALLER_NO_MODIFY_PATH=1 sh
+          echo "$HOME/compact/bin" >> "$GITHUB_PATH"
+      - name: Install the latest compiler
+        run: compact update
+      - name: Compile
+        run: |
+          compact --version
+          for f in examples/vulnerable.compact examples/safe.compact test/fixtures/imports/main.compact; do
+            echo "::group::$f"
+            compact compile --skip-zk "$f" "build/$(basename "$f" .compact)"
+            echo "::endgroup::"
+          done
 
   # Runs the action from this repo on the example contracts, as a smoke test.
   # examples/vulnerable.compact is meant to produce findings, so it never fails the build.
   self-scan:
+    name: Action smoke test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
