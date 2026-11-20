@@ -2,20 +2,20 @@
 
 # 🛡️ Midnight Shield
 
-**Static analyzer for Midnight Compact contracts.**
-Catch security and privacy bugs before you deploy, in your terminal, in CI, and in AI coding agents.
+**Static analyzer for Midnight Compact contracts and the TypeScript code around them.**
+Catch security and privacy bugs before you deploy: in your terminal, your editor, your browser, CI, and AI coding agents.
 
 [![CI](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
-![Rules](https://img.shields.io/badge/rules-9-purple)
-![Tests](https://img.shields.io/badge/tests-89%20passing-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)
-![Version](https://img.shields.io/badge/version-0.3.0-orange)
+![Rules](https://img.shields.io/badge/rules-12-purple)
+![Tests](https://img.shields.io/badge/tests-120%20passing-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
+![Version](https://img.shields.io/badge/version-0.4.0-orange)
 
-[Quick start](#quick-start) · [Usage guide](#usage-guide) · [Rules](#rules) · [How it works](#how-it-works) · [Verification](#testing-and-verification) · [GitHub Action](#github-action) · [AI agents](#use-with-ai-coding-agents)
+[Playground](https://efforthye.github.io/midnight-shield/) · [Quick start](#quick-start) · [Rules](#rules) · [Disclosure map](#disclosure-map) · [Editor](#vs-code) · [CI](#github-action) · [AI agents](#use-with-ai-coding-agents) · [Verification](#testing-and-verification)
 
-<img src="docs/assets/demo.png" alt="Midnight Shield scanning a vulnerable Compact contract" width="820">
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/demo.png" alt="Midnight Shield scanning a vulnerable Compact contract" width="820">
 
 <sub>Community project for the Midnight ecosystem. Not an official Midnight Foundation product.</sub>
 
@@ -33,158 +33,159 @@ The Compact compiler already stops you from disclosing witness data by accident.
 | Unchecked witness | The user can write any balance, score, or state to the ledger | [MS002](docs/rules/MS002.md) |
 | Public hash of a vote, age, or PIN | Few possible inputs, so the hash can be brute-forced | [MS003](docs/rules/MS003.md) |
 | Commitment with public or reused randomness | The commitment hides nothing, or links users together | [MS004](docs/rules/MS004.md) |
-| Hash without a domain tag | The same secret produces linkable outputs across uses | [MS005](docs/rules/MS005.md) |
 | `disclose(secretKey())` | The secret key is published for everyone to read | [MS007](docs/rules/MS007.md) |
 | Merkle membership with no nullifier | One member can vote or claim again and again | [MS008](docs/rules/MS008.md) |
 | Merkle root checked, leaf never checked | Anyone can reuse another member's public path | [MS009](docs/rules/MS009.md) |
+| Same member tag in every circuit | Anonymous members' actions can be linked together | [MS010](docs/rules/MS010.md) |
+| Remote proof server in the DApp | A third party sees every user's private inputs | [MS101](docs/rules/MS101.md) |
+| Wallet seed in a log | The seed ends up in CI logs and crash reports | [MS102](docs/rules/MS102.md) |
 
 Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint** is to Noir: a static analyzer that catches issues before deploy, with rules built around Midnight's privacy model.
 
 ## Highlights
 
-- 🔍 **Real parser, not regex.** Compact is parsed into a syntax tree, and one unsupported construct never hides the rest of the file.
-- 🧬 **Data-flow analysis across circuits and files.** Tracks every value back to witnesses, private inputs, public ledger state, or constants, and follows calls into helper circuits and imported modules.
-- 🎲 **Entropy-aware.** Knows that a `Boolean` vote has 1 bit of secret entropy and a `Bytes<32>` key has 256, so it flags brute-forceable hashes without crying wolf.
-- 🧪 **Verified on real code, in CI.** Every push scans all 146 `.compact` files of the official examples and OpenZeppelin Contracts for Compact at pinned commits (zero parse errors, zero medium-or-worse findings), and compiles the bundled examples with the real Compact compiler.
-- 📚 **Grounded in the official guidance.** Rules follow the [Midnight security best practices](https://docs.midnight.network/guides/security-best-practices) and the [explicit disclosure](https://docs.midnight.network/compact/explicit_disclosure) rules.
-- 🤖 **Built for AI-assisted development.** JSON output and a ready-made agent skill let Claude Code scan, fix, and re-scan on its own.
-- ⚙️ **Fits your workflow.** Code frames in the terminal, SARIF for GitHub code scanning, a config file, inline suppressions, and zero runtime dependencies.
+- 🔍 **Real parser and data-flow analysis.** Tracks every value back to witnesses, private inputs, public ledger state, or constants, across helper circuits and imported files.
+- 🗺️ **Disclosure map.** One table of everything your contract makes public, and whether it is raw, hashed or committed. Unique to Midnight.
+- 🎲 **Entropy-aware.** Knows a `Boolean` vote has 1 bit of secret entropy and a `Bytes<32>` key has 256, so it flags brute-forceable hashes without crying wolf.
+- 🎯 **Honest about certainty.** Every finding has a severity *and* a confidence. Rules that rely on names or guess intent say so.
+- 🧪 **Verified on real code, in CI.** 1,052 files of the official examples and OpenZeppelin Contracts for Compact (Compact and TypeScript) at pinned commits: zero parse errors, zero medium-or-worse findings. Examples are compiled with the real Compact compiler.
+- 🧰 **Everywhere you work.** CLI, web playground, VS Code, GitHub Action with SARIF, Markdown reports, Claude Code skill, plugin API.
+- 🏗️ **Easy to adopt.** Baselines accept existing findings so CI only fails on new ones. Zero runtime dependencies.
 
 ## Quick start
 
-Requires Node.js 20 or later. No install needed:
+Requires Node.js 20 or later.
 
 ```bash
-npx github:efforthye/midnight-shield contracts/
+npx midnight-shield contracts/
 ```
 
-Or try it on the bundled examples:
+> Until the first npm release is published, use `npx github:efforthye/midnight-shield contracts/` instead.
 
-```bash
-git clone https://github.com/efforthye/midnight-shield.git
-cd midnight-shield
-npm install
-npm run demo
-```
+Or try it without installing anything in the **[web playground](https://efforthye.github.io/midnight-shield/)**. Your code never leaves the browser.
 
-[`examples/vulnerable.compact`](examples/vulnerable.compact) triggers every rule. [`examples/safe.compact`](examples/safe.compact) is the same logic written safely.
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground.png" alt="Web playground" width="820">
+
+The repository has examples: [`examples/vulnerable.compact`](examples/vulnerable.compact) triggers every Compact rule, [`examples/dapp/vulnerable.ts`](examples/dapp/vulnerable.ts) every TypeScript rule, and the `safe` versions show the fixes (0 findings).
 
 ## Usage guide
 
-### 1. Scan your contracts
-
-Point Midnight Shield at a file or a folder. It finds every `.compact` file inside (skipping `node_modules`, `dist`, `build` and compiler output), and follows `import "..."` statements into other files.
+### 1. Scan
 
 ```bash
-npx github:efforthye/midnight-shield contracts/
+npx midnight-shield contracts/          # .compact files and the DApp's .ts/.js files
+npx midnight-shield contracts/ --no-sdk # only .compact files
 ```
+
+Midnight Shield skips `node_modules`, `dist`, `build`, compiler output and, for TypeScript checks, test files. It follows `import "..."` into other Compact files.
 
 ### 2. Read a finding
 
-<img src="docs/assets/demo.png" alt="Annotated scan output" width="820">
+Each finding shows its **severity**, **rule**, **location** (clickable in most terminals), **confidence** when it is not high, the **message** with the fix, a **code frame**, and a link to the rule page.
 
-Each finding shows:
-
-| Part | Example | Meaning |
-| --- | --- | --- |
-| Severity | `CRITICAL` | How bad it is: critical, high, medium, low, info |
-| Rule | `MS001 own-public-key-auth` | Which check fired |
-| Location | `examples/vulnerable.compact:22:10` | File, line, column. Click it in most terminals and editors |
-| Message | `ownPublicKey() is used to...` | What is wrong and how to fix it |
-| Code frame | `^^^^^^^^^^^^^^` | The exact expression |
-| Link | `→ .../docs/rules/MS001.md` | Full explanation with a vulnerable and a fixed example |
+```bash
+npx midnight-shield explain MS009   # read a rule's documentation in the terminal
+```
 
 ### 3. Fix and scan again
 
-Every rule page has a fix. For MS001, authorize with a secret instead of `ownPublicKey()`:
-
-```diff
-- export ledger owner: ZswapCoinPublicKey;
-+ export ledger ownerId: Bytes<32>;
-+ witness secretKey(): Bytes<32>;
-+
-+ circuit deriveId(sk: Bytes<32>): Bytes<32> {
-+   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "myapp:owner:"), sk]);
-+ }
-
-  export circuit withdraw(): [] {
--   assert(ownPublicKey() == owner, "not the owner");
-+   assert(deriveId(secretKey()) == ownerId, "not the owner");
-  }
-```
-
-Then run the scan again until it is clean:
-
-<img src="docs/assets/safe.png" alt="No findings" width="820">
-
-### 4. Follow imports across files
-
-Checks hidden in imported modules are followed, and findings are reported where your code calls them:
-
-<img src="docs/assets/imports.png" alt="A finding reported through an imported module" width="820">
-
-### 5. Tune it for your project
-
-Create a config file, then edit it:
+Every rule page shows a vulnerable and a fixed example. Safe fixes can be applied automatically:
 
 ```bash
-npx github:efforthye/midnight-shield --init
+npx midnight-shield contracts/ --fix-dry-run   # see what would change
+npx midnight-shield contracts/ --fix           # apply
 ```
 
-For example, to fail CI on high or worse and skip test contracts:
+Only fixes that cannot change what a contract does are automatic (today: adding a missing `pragma`). Fixes that change hashes or commitments would change on-chain values, so they are left to you or to the [AI skill](#use-with-ai-coding-agents).
+
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/safe.png" alt="No findings" width="820">
+
+### 4. Adopt it in an existing project
+
+Accept today's findings and fail CI only on new ones:
+
+```bash
+npx midnight-shield contracts/ --write-baseline .midnight-shield-baseline.json
+npx midnight-shield contracts/ --baseline .midnight-shield-baseline.json
+```
+
+Baseline entries are matched by a fingerprint of the rule and the code line, so moving code around does not break them. `--show-suppressed` lists everything that is hidden by a baseline or an inline comment, for audits.
+
+### 5. Configure
+
+```bash
+npx midnight-shield --init   # creates midnight-shield.config.json
+```
 
 ```json
 {
   "disable": [],
   "failOn": "high",
   "minSeverity": "info",
-  "ignore": ["**/test/**"]
+  "minConfidence": "low",
+  "ignore": ["**/test/**"],
+  "baseline": ".midnight-shield-baseline.json",
+  "plugins": ["./tools/our-rules.mjs"],
+  "sdk": true
 }
 ```
-
-| Key | Default | Description |
-| --- | --- | --- |
-| `disable` | `[]` | Rule IDs to skip, e.g. `["MS005"]` |
-| `failOn` | `"high"` | Exit with code 1 at or above this severity (`"none"` to never fail) |
-| `minSeverity` | `"info"` | Hide findings below this severity |
-| `ignore` | `[]` | Glob patterns of files to skip |
-
-`midnight-shield.config.json` in the working directory is loaded automatically. Command-line options override it.
 
 To silence one finding in code, say why next to it:
 
 ```compact
 // shield-disable-next-line MS005 -- the tag is supplied by every caller
 const h = persistentHash<Vector<2, Bytes<32>>>([tag, sk]);
-
-const y = persistentHash<Bytes<32>>(z); // shield-disable-line MS005
-
-// shield-disable-file MS006   (anywhere in the file)
 ```
 
-Leave out the rule ID to suppress every rule on that line.
+`shield-disable-line` and `shield-disable-file` work the same way. Leave out the rule ID to suppress every rule.
 
-### 6. Add it to CI
+### 6. Report
 
-See [GitHub Action](#github-action) below. Findings show up in the Security tab and on pull requests.
+```bash
+npx midnight-shield contracts/ --format markdown -o report.md   # audit or PR report
+npx midnight-shield contracts/ --format sarif -o results.sarif  # GitHub code scanning
+npx midnight-shield contracts/ --format json                    # scripts and AI agents
+```
 
 ## Rules
 
-<img src="docs/assets/rules.png" alt="midnight-shield --list-rules" width="820">
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/rules.png" alt="midnight-shield --list-rules" width="820">
 
-| ID | Name | Severity | Finds |
-| --- | --- | --- | --- |
-| [MS001](docs/rules/MS001.md) | `own-public-key-auth` | 🟣 Critical | `ownPublicKey()` compared to a key to authorize the caller, including through helper circuits |
-| [MS002](docs/rules/MS002.md) | `unconstrained-witness` | 🟡 Medium | A witness value reaches public state with no `assert` that checks it |
-| [MS003](docs/rules/MS003.md) | `low-entropy-hash` | 🔴 High | A hash of only low-entropy private values (vote, age, PIN) made public |
-| [MS004](docs/rules/MS004.md) | `weak-commitment-randomness` | 🔴 High | A commitment with constant, public, short, or reused randomness |
-| [MS005](docs/rules/MS005.md) | `missing-domain-separation` | 🔵 Low | A hash of private data with no constant domain tag |
-| [MS007](docs/rules/MS007.md) | `disclosed-secret` | 🔴 High | The raw value of a secret key, seed, or password is made public |
-| [MS008](docs/rules/MS008.md) | `missing-nullifier` | 🟡 Medium | Merkle-authorized state change with no nullifier, so it can be repeated |
-| [MS009](docs/rules/MS009.md) | `unbound-merkle-path` | 🔴 High | Merkle root checked, but the path's leaf is never tied to the caller |
-| [MS006](docs/rules/MS006.md) | `missing-pragma` | ⚪ Info | No `pragma language_version` |
+**Compact contracts**
 
-Every rule page explains why it matters, shows a vulnerable and a fixed example, and lists what is deliberately **not** flagged.
+| ID | Name | Severity | Confidence | Finds |
+| --- | --- | --- | --- | --- |
+| [MS001](docs/rules/MS001.md) | `own-public-key-auth` | 🟣 Critical | high | `ownPublicKey()` compared to a key to authorize the caller, including through helper circuits |
+| [MS002](docs/rules/MS002.md) | `unconstrained-witness` | 🟡 Medium | medium | A witness value reaches public state with no `assert` that checks it |
+| [MS003](docs/rules/MS003.md) | `low-entropy-hash` | 🔴 High | medium | A hash of only low-entropy private values (vote, age, PIN) made public |
+| [MS004](docs/rules/MS004.md) | `weak-commitment-randomness` | 🔴 High | high | A commitment with constant, public, short, or reused randomness |
+| [MS005](docs/rules/MS005.md) | `missing-domain-separation` | 🔵 Low | medium | A hash of private data with no constant domain tag |
+| [MS006](docs/rules/MS006.md) | `missing-pragma` | ⚪ Info | high | No `pragma language_version` (auto-fixable) |
+| [MS007](docs/rules/MS007.md) | `disclosed-secret` | 🔴 High | low | The raw value of a secret key, seed, or password is made public |
+| [MS008](docs/rules/MS008.md) | `missing-nullifier` | 🟡 Medium | low | Merkle-authorized state change with no nullifier, so it can be repeated |
+| [MS009](docs/rules/MS009.md) | `unbound-merkle-path` | 🔴 High | high | Merkle root checked, but the path's leaf is never tied to the caller |
+| [MS010](docs/rules/MS010.md) | `linkable-ledger-update` | 🟡 Medium | medium | In an anonymous-membership contract, the same secret-derived tag is published by several circuits |
+
+**DApp code (TypeScript / JavaScript)**
+
+| ID | Name | Severity | Confidence | Finds |
+| --- | --- | --- | --- | --- |
+| [MS101](docs/rules/MS101.md) | `remote-proof-server` | 🟣 Critical | medium | The proof server URL points to a remote host |
+| [MS102](docs/rules/MS102.md) | `secret-in-log` | 🔴 High | medium | A seed, secret key or password passed to a log call |
+
+Need a rule for your own conventions? [Write a plugin](docs/custom-rules.md).
+
+## Disclosure map
+
+On Midnight, everything that becomes public is explicit. The disclosure map lists all of it in one place, so a reviewer can check the privacy of a contract in minutes:
+
+```bash
+npx midnight-shield contracts/ --print disclosures
+```
+
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/disclosures.png" alt="Disclosure map" width="820">
+
+`RAW` means private data is published as is. That is sometimes intended (a public balance), but every `RAW` row deserves a second look. The map is also available as JSON and Markdown (`--format json|markdown`), in the playground, and in VS Code.
 
 ## How it works
 
@@ -194,9 +195,12 @@ flowchart LR
     B --> C["Parser<br/>(syntax tree)"]
     I["Imported modules"] --> D
     C --> D["Data-flow analyzer"]
-    D --> E["Rules<br/>MS001-MS009"]
-    E --> F["Config, suppressions<br/>and filters"]
-    F --> G["Text / JSON / SARIF"]
+    D --> E["Rules MS001-MS010<br/>+ plugins"]
+    T[".ts / .js files"] --> S["SDK checks<br/>MS101-MS102"]
+    E --> F["Config, baseline,<br/>suppressions"]
+    S --> F
+    D --> M["Disclosure map"]
+    F --> G["Text / JSON / SARIF / Markdown<br/>VS Code / Playground"]
 ```
 
 For every circuit, the analyzer evaluates each expression to a summary of where its value came from:
@@ -209,42 +213,13 @@ For every circuit, the analyzer evaluates each expression to a summary of where 
 | Constant | `pad(32, "app:")`, `default<Bytes<32>>`, enum members | Public, zero entropy |
 | `disclose(x)` | | Public from this point on |
 
-Secret entropy is estimated from types (`Boolean` = 1 bit, `Uint<16>` = 16, `Bytes<32>` = 256). Calls to circuits in the same file or in imported modules are evaluated with the caller's arguments, so a check hidden in a helper is still found, and a domain tag passed in by the caller is still seen.
+Secret entropy is estimated from types (`Boolean` = 1 bit, `Uint<16>` = 16, `Bytes<32>` = 256). Calls to circuits in the same file or in imported modules are evaluated with the caller's arguments, so a check hidden in a helper is still found.
 
-## Testing and verification
+The rules follow the [Midnight security best practices](https://docs.midnight.network/guides/security-best-practices) and the [explicit disclosure](https://docs.midnight.network/compact/explicit_disclosure) rules.
 
-Midnight Shield is checked three ways on every push:
+## VS Code
 
-| Check | What it proves | Command |
-| --- | --- | --- |
-| **Unit and integration tests** (89 tests, ~97% line coverage) | Lexer, parser, every rule (flagged and not-flagged cases), reporters, CLI exit codes and config | `npm test`, `npm run coverage` |
-| **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
-| **Corpus verification** | Real Midnight code at pinned commits parses with zero errors, has no medium-or-worse findings, and matches a reviewed baseline | `npm run verify` |
-| **Real compiler** | The bundled example contracts are valid Compact: they compile with the official `compact` toolchain | CI job `compile-examples` |
-
-<img src="docs/assets/verify.png" alt="Corpus verification output" width="720">
-
-The corpus check guards against false positives: code maintained by the Midnight and OpenZeppelin teams should not trip medium or worse rules. Any change in the numbers fails CI until a person reviews it and updates `verify/baseline.json`.
-
-## CLI reference
-
-```text
-midnight-shield [paths...] [options]
-midnight-shield --init
-
-  -f, --format <text|json|sarif>   Output format (default: text)
-  -o, --output <file>              Write the report to a file
-  -c, --config <file>              Config file (default: ./midnight-shield.config.json)
-      --fail-on <severity>         Exit 1 at or above this severity (default: high; "none" never fails)
-      --min-severity <severity>    Hide findings below this severity
-      --disable <MS001,MS005>      Skip rules
-      --ignore <glob>              Skip files matching a glob (repeatable)
-      --no-code-frame              Do not print source lines
-      --list-rules                 Print all rules
-      --init                       Create a config file
-```
-
-Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` usage or config error.
+The extension in [`vscode/`](vscode) shows findings as you type, with links to each rule, a **Scan workspace** command and a **Show disclosure map** command. It reads `midnight-shield.config.json` and inline suppressions. See [`vscode/README.md`](vscode/README.md) to build and install it.
 
 ## GitHub Action
 
@@ -279,32 +254,43 @@ Findings appear in **Security → Code scanning** and as annotations on pull req
 
 ### Claude Code skill
 
-This repo ships a skill that teaches Claude Code to scan, fix findings in order of severity, and re-scan until the contract is clean. Copy it into your project:
+[`skills/midnight-shield`](skills/midnight-shield/SKILL.md) teaches Claude Code to scan, fix findings in order of severity, check the disclosure map, and re-scan until the contract is clean:
 
 ```bash
 mkdir -p .claude/skills
-cp -r skills/midnight-shield .claude/skills/
+cp -r node_modules/midnight-shield/skills/midnight-shield .claude/skills/
 ```
 
-Claude Code then runs Midnight Shield on its own after editing `.compact` files, and reports what it fixed. See [`skills/midnight-shield/SKILL.md`](skills/midnight-shield/SKILL.md).
-
-### JSON output
-
-Any agent or script can use the JSON report. Each finding includes the rule, location, message, source line, and a documentation link:
-
-<img src="docs/assets/json.png" alt="JSON output" width="820">
+### JSON and the library API
 
 ```bash
-npx github:efforthye/midnight-shield contracts/ --format json --fail-on none
+npx midnight-shield contracts/ --format json --fail-on none
 ```
-
-### From code
 
 ```ts
-import { lintSource } from "midnight-shield";
+import { lintSource, mapDisclosures } from "midnight-shield";
 
 const findings = lintSource(source, "counter.compact");
+const publicData = mapDisclosures(source, "counter.compact");
 ```
+
+## CLI reference
+
+```text
+midnight-shield [paths...] [options]
+midnight-shield explain <RULE>
+midnight-shield --init
+
+Output:     -f, --format text|json|sarif|markdown   -o, --output <file>
+            --print disclosures   --no-code-frame   --no-color
+Filtering:  --fail-on <severity>  --min-severity <severity>  --min-confidence <confidence>
+            --disable <IDs>  --ignore <glob>  --no-sdk  --show-suppressed
+Adoption:   --baseline <file>  --write-baseline <file>  --fix  --fix-dry-run
+            -c, --config <file>  --plugin <module>
+Other:      --list-rules  -v, --version  -h, --help
+```
+
+Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` usage or config error.
 
 ## How it compares
 
@@ -314,25 +300,36 @@ const findings = lintSource(source, "counter.compact");
 | Analysis method | Type checker | Line-by-line patterns | Syntax tree + data flow |
 | Follows values across helper circuits and imports | | | ✅ |
 | Entropy-aware hash and commitment checks | | | ✅ |
-| CLI for local use | ✅ | Demo script | ✅ |
-| GitHub Action + SARIF | | | ✅ |
-| Config file and inline suppressions | | | ✅ |
-| AI agent skill | | | ✅ |
+| Disclosure map | | | ✅ |
+| TypeScript/DApp checks | | ✅ | ✅ |
+| Severity + confidence | | Severity | ✅ |
+| Baselines, suppressions, config | | | ✅ |
+| CLI · GitHub Action + SARIF · VS Code | ✅ · · | Demo script | ✅ · ✅ · ✅ |
+| Web UI | | ✅ (with on-chain review receipt) | ✅ (local only) |
+| AI agent skill · plugin API | | | ✅ · ✅ |
 | Verified against real Midnight code in CI | n/a | | ✅ |
-| Web UI and on-chain review receipt | | ✅ | |
 
-Midnight Shield complements the compiler rather than replacing it, and focuses on daily use in development and CI.
+## Testing and verification
+
+| Check | What it proves | Command |
+| --- | --- | --- |
+| **Unit and integration tests** (120 tests, 96% line coverage of `src/`) | Lexer, parser, every rule (flagged and not-flagged cases), reporters, CLI, baselines, plugins, fixes | `npm test`, `npm run coverage` |
+| **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
+| **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, no medium-or-worse findings, results match a reviewed baseline | `npm run verify` |
+| **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |
+| **Package** | The npm tarball installs and the CLI runs | CI job `package` |
+
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/verify.png" alt="Corpus verification output" width="720">
 
 ## Roadmap
 
-- [x] **v0.1** Parser, data-flow analysis, 6 rules, CLI, GitHub Action, SARIF, rule docs
+- [x] **v0.1** Parser, data-flow analysis, CLI, GitHub Action, SARIF
 - [x] **v0.2** Imported modules, code frames, config file, Claude Code skill
-- [x] **v0.3** MS007-MS009, corpus verification, real-compiler CI, 89 tests and fuzzing
-- [ ] npm release (`npx midnight-shield`)
-- [ ] Web playground: paste a contract, see findings in the browser
-- [ ] More rules: linkable ledger updates, assert messages that embed private data
-- [ ] TypeScript/SDK checks: remote proof server, secrets in logs
-- [ ] Editor integration (VS Code diagnostics)
+- [x] **v0.3** Merkle and secret rules, corpus verification, real-compiler CI
+- [x] **v0.4** Disclosure map, confidence, baselines, Markdown, plugins, autofix, TypeScript checks, playground, VS Code extension, npm package
+- [ ] VS Code Marketplace release
+- [ ] Data-flow facts for plugins
+- [ ] More rules from community feedback
 
 Ideas and false-positive reports are welcome in [Issues](https://github.com/efforthye/midnight-shield/issues).
 
@@ -340,17 +337,18 @@ Ideas and false-positive reports are welcome in [Issues](https://github.com/effo
 
 ```bash
 npm install
-npm test          # build + tests
-npm run coverage  # tests with coverage
-npm run verify    # scan real Midnight code and compare with the baseline
-npm run demo      # scan examples/
+npm test            # build + tests
+npm run coverage    # tests with coverage
+npm run verify      # scan real Midnight code and compare with the baseline
+npm run playground  # build the web playground into playground/dist
+npm run demo        # scan examples/
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for adding rules, [SECURITY.md](SECURITY.md) for reporting issues, and [CHANGELOG.md](CHANGELOG.md) for release notes.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## Acknowledgements
 
-Several initial rule ideas come from [Night Check](https://github.com/CjDabrow/night-check) (MIT). Built as part of **KR NightForce Cohort 2** (Builder track).
+Several initial rule ideas come from [Night Check](https://github.com/CjDabrow/night-check) (MIT). Feature ideas from [Slither](https://github.com/crytic/slither), [Aderyn](https://github.com/Cyfrin/aderyn), [Circomspect](https://github.com/trailofbits/circomspect) and aztec-lint. Built as part of **KR NightForce Cohort 2** (Builder track).
 
 ## License
 
