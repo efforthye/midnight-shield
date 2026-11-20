@@ -1,0 +1,44 @@
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+// A deliberately vulnerable contract that triggers every Midnight Shield rule.
+// Run: npx midnight-shield examples/
+
+export enum Vote { YES, NO }
+
+export ledger owner: ZswapCoinPublicKey;
+export ledger ballots: Set<Bytes<32>>;
+export ledger balance: Uint<64>;
+export ledger publicKey: Bytes<32>;
+export ledger salt: Bytes<32>;
+export ledger committed: Bytes<32>;
+
+witness secretKey(): Bytes<32>;
+witness myVote(): Vote;
+witness myBalance(): Uint<64>;
+
+// MS001: ownPublicKey() is chosen by the prover, so this check authorizes anyone.
+export circuit withdraw(): [] {
+  assert(ownPublicKey() == owner, "not the owner");
+}
+
+// MS003: a vote has 1 bit of entropy; publishing its hash reveals it.
+export circuit castVote(): [] {
+  const h = persistentHash<Vector<2, Bytes<32>>>([pad(32, "vote:"), myVote() as Field as Bytes<32>]);
+  ballots.insert(disclose(h));
+}
+
+// MS002: the prover can report any balance; nothing checks it.
+export circuit syncBalance(): [] {
+  balance = disclose(myBalance());
+}
+
+// MS005: no domain tag, so this key is linkable with other hashes of the same secret.
+export circuit register(): [] {
+  publicKey = disclose(persistentHash<Bytes<32>>(secretKey()));
+}
+
+// MS004: the commitment randomness is public ledger state.
+export circuit commitAmount(amount: Uint<64>): [] {
+  committed = persistentCommit<Uint<64>>(amount, salt);
+}
