@@ -1,8 +1,11 @@
 name: Release
 
-# Publishes to npm when a version tag is pushed:
-#   npm version minor   (updates package.json and creates the tag)
+# Runs when a version tag is pushed. Releasing is two commands:
+#   npm version patch      (or minor; updates package.json, src/reporters.ts and
+#                           CHANGELOG.md, commits, and tags)
 #   git push --follow-tags
+# Then this publishes to npm, creates the GitHub release with the changelog
+# notes, and publishes to GitHub Packages.
 # Uses npm Trusted Publishing (OIDC): no npm token is stored in this repository.
 # Set it up once on npmjs.com: package Settings > Trusted Publisher > GitHub Actions,
 # repository efforthye/midnight-shield, workflow release.yml.
@@ -31,7 +34,12 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)."
+        run: |
+          # this version's section of CHANGELOG.md becomes the release notes
+          awk -v v="${GITHUB_REF_NAME#v}" 'index($0, "## [" v "]") == 1 { found = 1; next } found && /^## \[/ { exit } found' CHANGELOG.md > notes.md
+          echo "" >> notes.md
+          echo "Install: \`npx midnight-shield .\` · Playground: https://efforthye.github.io/midnight-shield/" >> notes.md
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --latest
 
   # Also list the package on the repository page. GitHub Packages needs a scoped
   # name, and uses the workflow token. A failure here never blocks the npm release.

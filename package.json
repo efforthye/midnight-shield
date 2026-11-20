@@ -55,7 +55,8 @@
     "verify": "npm run build && node scripts/verify-corpus.mjs",
     "demo": "node dist/src/cli.js examples/",
     "playground": "node scripts/build-playground.mjs",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm test",
+    "version": "node scripts/release-version.mjs && git add src/reporters.ts CHANGELOG.md"
   },
   "publishConfig": {
     "access": "public",

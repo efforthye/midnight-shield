@@ -34,3 +34,15 @@ npm run demo      # scan examples/
 ## Commit messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/), e.g. `feat(analyzer): ...`, `fix(parser): ...`, `docs(rules): ...`.
+
+## Releasing
+
+1. Add the changes under `## [Unreleased]` in `CHANGELOG.md` as you go.
+2. Release with two commands:
+
+   ```bash
+   npm version patch      # or minor for new features
+   git push --follow-tags
+   ```
+
+`npm version` updates `package.json`, the version in `src/reporters.ts` and the changelog heading, then commits and tags. Pushing the tag runs the Release workflow, which tests, publishes to npm (Trusted Publishing, with provenance), creates the GitHub release with that version's changelog notes, and publishes to GitHub Packages.
