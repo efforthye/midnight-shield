@@ -1,0 +1,8 @@
+[
+  {
+    "corpus": "midnight-examples",
+    "rule": "MS104",
+    "file": "examples/leaderboard/ui/src/contexts/BrowserLeaderboardManager.ts",
+    "reason": "Confirmed real: the example keeps the player's raw secret key in localStorage (its own comment says so). Any script running on the page can read it and prove ownership of that player's leaderboard entries."
+  }
+]

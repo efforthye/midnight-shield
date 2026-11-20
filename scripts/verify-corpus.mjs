@@ -8,6 +8,8 @@
 //   - any file cannot be parsed (MS000),
 //   - any finding is medium or worse (this code is maintained by the Midnight
 //     and OpenZeppelin teams, so such a finding is almost surely a false positive),
+//     unless it is listed in verify/reviewed.json: a finding a person checked
+//     by hand and confirmed is real, with the reason,
 //   - the per-rule finding counts differ from the baseline.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -30,6 +32,9 @@ const CORPORA = [
 const BLOCKING = new Set(["critical", "high", "medium"]);
 const root = resolve(process.env.CORPUS_DIR ?? ".cache/corpus");
 const baselinePath = resolve("verify/baseline.json");
+const reviewedPath = resolve("verify/reviewed.json");
+const reviewed = existsSync(reviewedPath) ? JSON.parse(readFileSync(reviewedPath, "utf8")) : [];
+const isReviewed = (corpus, f) => reviewed.some((r) => r.corpus === corpus && r.rule === f.ruleId && r.file === f.file);
 const update = process.argv.includes("--update");
 
 function git(args, cwd) {
@@ -64,7 +69,7 @@ for (const corpus of CORPORA) {
 
   for (const f of findings) {
     if (f.ruleId === "MS000") problems.push(`${corpus.name}: parse error at ${f.file}:${f.line} (${f.message})`);
-    else if (BLOCKING.has(f.severity)) problems.push(`${corpus.name}: ${f.severity} ${f.ruleId} at ${f.file}:${f.line}`);
+    else if (BLOCKING.has(f.severity) && !isReviewed(corpus.name, f)) problems.push(`${corpus.name}: ${f.severity} ${f.ruleId} at ${f.file}:${f.line}`);
   }
 }
 
@@ -101,4 +106,4 @@ if (problems.length) {
   console.error(`\n✖ Verification failed:\n  ${problems.join("\n  ")}`);
   process.exit(1);
 }
-console.log("✔ Verification passed: every file parses, no medium-or-worse findings, results match the baseline.");
+console.log("✔ Verification passed: every file parses, no unreviewed medium-or-worse findings, results match the baseline.");

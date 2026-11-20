@@ -4,7 +4,8 @@
     "files": 679,
     "findings": {
       "MS005": 6,
-      "MS006": 1
+      "MS006": 1,
+      "MS104": 1
     }
   },
   "compact-contracts": {
