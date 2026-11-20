@@ -82,6 +82,31 @@ export function lex(source: string): LexResult {
     const tokCol = col;
     const tokOffset = i;
 
+    if (ch === "`") {
+      // template literal (TypeScript/JavaScript): one string token; ${...} is kept inside
+      let j = i + 1;
+      let depth = 0;
+      while (j < source.length) {
+        const c = source[j];
+        if (c === "\\") {
+          j += 2;
+          continue;
+        }
+        if (depth === 0 && c === "`") break;
+        if (c === "$" && source[j + 1] === "{") {
+          depth++;
+          j += 2;
+          continue;
+        }
+        if (depth > 0 && c === "}") depth--;
+        j++;
+      }
+      const raw = source.slice(i, j + 1);
+      advance(j + 1 - i);
+      tokens.push({ kind: "string", value: raw, line: tokLine, col: tokCol, offset: tokOffset });
+      continue;
+    }
+
     if (ch === '"' || ch === "'") {
       const quote = ch;
       let j = i + 1;
