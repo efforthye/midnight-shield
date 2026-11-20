@@ -11,11 +11,13 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 ![Rules](https://img.shields.io/badge/rules-12-purple)
 ![Tests](https://img.shields.io/badge/tests-120%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
-![Version](https://img.shields.io/badge/version-0.4.0-orange)
+[![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
 
-[Playground](https://efforthye.github.io/midnight-shield/) · [Quick start](#quick-start) · [Rules](#rules) · [Disclosure map](#disclosure-map) · [Editor](#vs-code) · [CI](#github-action) · [AI agents](#use-with-ai-coding-agents) · [Verification](#testing-and-verification)
+[Quick start](#quick-start) · [Web playground](#web-playground) · [Rules](#rules) · [Disclosure map](#disclosure-map) · [Editor](#vs-code) · [CI](#github-action) · [AI agents](#use-with-ai-coding-agents) · [Verification](#testing-and-verification)
 
 <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/demo.png" alt="Midnight Shield scanning a vulnerable Compact contract" width="820">
+
+**[▶ Try it in your browser](https://efforthye.github.io/midnight-shield/)** · no install, your code never leaves the page
 
 <sub>Community project for the Midnight ecosystem. Not an official Midnight Foundation product.</sub>
 
@@ -57,16 +59,44 @@ Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint*
 Requires Node.js 20 or later.
 
 ```bash
+# run once, no install
 npx midnight-shield contracts/
+
+# or add it to your project
+npm install --save-dev midnight-shield
+npx midnight-shield contracts/
+
+# or install globally
+npm install -g midnight-shield
+midnight-shield contracts/
 ```
 
-> Until the first npm release is published, use `npx github:efforthye/midnight-shield contracts/` instead.
+> If the npm package is not available yet, use `npx github:efforthye/midnight-shield contracts/`.
 
-Or try it without installing anything in the **[web playground](https://efforthye.github.io/midnight-shield/)**. Your code never leaves the browser.
-
-<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground.png" alt="Web playground" width="820">
+Not ready to install anything? Paste a contract into the **[web playground](#web-playground)**.
 
 The repository has examples: [`examples/vulnerable.compact`](examples/vulnerable.compact) triggers every Compact rule, [`examples/dapp/vulnerable.ts`](examples/dapp/vulnerable.ts) every TypeScript rule, and the `safe` versions show the fixes (0 findings).
+
+## Web playground
+
+**[efforthye.github.io/midnight-shield](https://efforthye.github.io/midnight-shield/)**
+
+The full analyzer, compiled to run in the browser. Paste a Compact contract or DApp TypeScript and see findings as you type. Nothing is uploaded: there is no server, so private contract code stays on your machine.
+
+| Findings with fixes | Disclosure map |
+| --- | --- |
+| <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground.png" alt="Playground findings" width="400"> | <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-disclosures.png" alt="Playground disclosure map" width="400"> |
+
+- **Live analysis** of `.compact` and `.ts` code, with problem lines marked in the editor gutter
+- **Disclosure map** tab: every value that becomes public, and whether it is raw, hashed or committed
+- **Examples** to start from: a vulnerable contract, its safe version, and vulnerable DApp code
+- **Share link**: the code is stored in the URL hash, so you can send a finding to a teammate or reviewer
+- **Download report** as Markdown for an audit note or a PR comment
+- Severity filter, light and dark themes, and a mobile layout
+
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-light.png" alt="Playground checking TypeScript DApp code in light theme" width="820">
+
+To run it locally: `npm run playground` builds a single file at `playground/dist/index.html` that you can open directly.
 
 ## Usage guide
 
