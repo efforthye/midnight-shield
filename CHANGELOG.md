@@ -2,13 +2,15 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-11-20
 
 ### Added
 
 - Playground: scan a public GitHub repository by URL (`github.com/owner/repo` or a `/tree/<branch>/<folder>` link), or open local files and folders. All files are analyzed together with imports resolved, and results are grouped by file. A repository scan can be shared as `#repo=owner/repo`.
 - Library: `lintFileMap`, `memoryImportResolver`, `parseRepoUrl` and `isScannableFile` for analyzing files held in memory.
 - Project logo, also used as the playground favicon and the VS Code extension icon.
+- Releases are also published to GitHub Packages as `@efforthye/midnight-shield`, so the package shows on the repository page.
+- Pitch deck and speaker script in `presentation/`.
 
 ### Fixed
 
