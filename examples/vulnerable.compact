@@ -4,27 +4,30 @@ import CompactStandardLibrary;
 // A deliberately vulnerable contract that triggers every Midnight Shield rule.
 // Run: npx midnight-shield examples/
 
-export enum Vote { YES, NO }
-
 export ledger owner: ZswapCoinPublicKey;
 export ledger ballots: Set<Bytes<32>>;
 export ledger balance: Uint<64>;
 export ledger publicKey: Bytes<32>;
 export ledger salt: Bytes<32>;
 export ledger committed: Bytes<32>;
+export ledger recoveryKey: Bytes<32>;
+export ledger members: MerkleTree<10, Bytes<32>>;
+export ledger claims: Counter;
+export ledger claimed: Set<Bytes<32>>;
 
 witness secretKey(): Bytes<32>;
-witness myVote(): Vote;
+witness myChoice(): Uint<8>;
 witness myBalance(): Uint<64>;
+witness memberPath(): MerkleTreePath<10, Bytes<32>>;
 
 // MS001: ownPublicKey() is chosen by the prover, so this check authorizes anyone.
 export circuit withdraw(): [] {
   assert(ownPublicKey() == owner, "not the owner");
 }
 
-// MS003: a vote has 1 bit of entropy; publishing its hash reveals it.
+// MS003: a choice from 0-255 has 8 bits of entropy; publishing its hash reveals it.
 export circuit castVote(): [] {
-  const h = persistentHash<Vector<2, Bytes<32>>>([pad(32, "vote:"), myVote() as Field as Bytes<32>]);
+  const h = persistentHash<Vector<2, Bytes<32>>>([pad(32, "vote:"), myChoice() as Field as Bytes<32>]);
   ballots.insert(disclose(h));
 }
 
@@ -41,4 +44,30 @@ export circuit register(): [] {
 // MS004: the commitment randomness is public ledger state.
 export circuit commitAmount(amount: Uint<64>): [] {
   committed = persistentCommit<Uint<64>>(amount, salt);
+}
+
+// MS007: the raw secret key is published.
+export circuit backupKey(): [] {
+  recoveryKey = disclose(secretKey());
+}
+
+circuit memberLeaf(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:member:"), sk]);
+}
+
+// MS008: the member proves who they are, but can claim again and again (no nullifier).
+export circuit claim(): [] {
+  const path = memberPath();
+  assert(disclose(path.leaf == memberLeaf(secretKey())), "not your path");
+  assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a member");
+  claims.increment(1);
+}
+
+// MS009: the path is never tied to the caller, so anyone can submit a member's public path.
+export circuit claimOnce(): [] {
+  const path = memberPath();
+  assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a member");
+  const n = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:claim:"), secretKey()]));
+  assert(!claimed.member(n), "already claimed");
+  claimed.insert(n);
 }

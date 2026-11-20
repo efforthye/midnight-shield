@@ -6,10 +6,14 @@ import CompactStandardLibrary;
 export ledger ownerId: Bytes<32>;
 export ledger committed: Bytes<32>;
 export ledger balance: Uint<64>;
+export ledger members: MerkleTree<10, Bytes<32>>;
+export ledger claimed: Set<Bytes<32>>;
+export ledger claims: Counter;
 
 witness secretKey(): Bytes<32>;
 witness randomness(): Bytes<32>;
 witness myBalance(): Uint<64>;
+witness memberPath(): MerkleTreePath<10, Bytes<32>>;
 
 circuit deriveId(sk: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:owner:"), sk]);
@@ -34,4 +38,21 @@ export circuit syncBalance(): [] {
   const b = myBalance();
   assert(b <= 1000000, "balance out of range");
   balance = disclose(b);
+}
+
+circuit memberLeaf(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:member:"), sk]);
+}
+
+// Anonymous membership done right: the path is tied to the caller's secret,
+// and a nullifier stops the same member from claiming twice.
+export circuit claim(): [] {
+  const sk = secretKey();
+  const path = memberPath();
+  assert(disclose(path.leaf == memberLeaf(sk)), "not your path");
+  assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a member");
+  const n = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:claim:"), sk]));
+  assert(!claimed.member(n), "already claimed");
+  claimed.insert(n);
+  claims.increment(1);
 }
