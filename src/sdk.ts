@@ -120,5 +120,87 @@ export function lintSdkSource(source: string): RawFinding[] {
       }
     }
   }
+  out.push(...hardcodedSecrets(tokens), ...browserStorage(tokens));
+  return out;
+}
+
+/** A string that looks like real key material: 32 random bytes in hex, or a BIP-39 style mnemonic. */
+function looksLikeKeyMaterial(literal: string): "hex" | "mnemonic" | undefined {
+  const v = literal.slice(1, -1).trim();
+  const hex = v.replace(/^0x/i, "");
+  // low-entropy values such as 000…001 are well-known development seeds, not leaks
+  if (/^[0-9a-fA-F]{64}$/.test(hex) && new Set(hex.toLowerCase()).size >= 8) return "hex";
+  const words = v.split(/\s+/);
+  if ([12, 15, 18, 21, 24].includes(words.length) && words.every((w) => /^[a-z]{3,8}$/.test(w)) && new Set(words).size >= 8) return "mnemonic";
+  return undefined;
+}
+
+/** MS103: a seed, secret key or mnemonic written into the source as a literal. */
+function hardcodedSecrets(tokens: Token[]): RawFinding[] {
+  const out: RawFinding[] = [];
+  for (let i = 0; i + 2 < tokens.length; i++) {
+    const name = tokens[i];
+    const op = tokens[i + 1];
+    const value = tokens[i + 2];
+    const isName = name.kind === "ident" || (name.kind === "string" && !name.value.startsWith("`"));
+    if (!isName || (op.value !== "=" && op.value !== ":")) continue;
+    if (tokens[i + 3]?.value === "=" || value.kind !== "string" || value.value.startsWith("`")) continue;
+    const key = name.kind === "string" ? name.value.slice(1, -1) : name.value;
+    if (!isSecretName(key)) continue;
+    const kind = looksLikeKeyMaterial(value.value);
+    if (!kind) continue;
+    out.push({
+      ruleId: "MS103",
+      severity: "critical",
+      confidence: "medium",
+      loc: { line: value.line, col: value.col },
+      message: `'${key}' is set to a ${kind === "hex" ? "32-byte hex key" : "recovery phrase"} written in the source. Anyone who can read the code or the bundle (a public repo, a deployed web app) can use it. Load it from an environment variable or the user's wallet instead, and treat this one as leaked.`,
+    });
+  }
+  return out;
+}
+
+const STORAGES = new Set(["localStorage", "sessionStorage"]);
+
+/** MS104: private state or a secret saved to localStorage/sessionStorage, which any script on the page can read. */
+function browserStorage(tokens: Token[]): RawFinding[] {
+  const out: RawFinding[] = [];
+  const sensitive = (t: Token) => {
+    const v = t.kind === "string" ? t.value.slice(1, -1) : t.value;
+    return (t.kind === "ident" || t.kind === "string") && (/privatestate/i.test(v.replace(/[-_\s]/g, "")) || isSecretName(v));
+  };
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.kind !== "ident" || !STORAGES.has(t.value)) continue;
+    // the tokens that make up this write: setItem(...) arguments, or the `= value` of an assignment
+    let parts: Token[] = [];
+    if (tokens[i + 1]?.value === "." && tokens[i + 2]?.value === "setItem" && tokens[i + 3]?.value === "(") {
+      for (let j = i + 4, depth = 1; j < tokens.length; j++) {
+        if (tokens[j].value === "(") depth++;
+        else if (tokens[j].value === ")" && --depth === 0) break;
+        if (tokens[j].kind === "string") parts.push(tokens[j], ...templateExpressionTokens(tokens[j]));
+        else parts.push(tokens[j]);
+      }
+    } else {
+      let j = i + 1;
+      if (tokens[j]?.value === "." && tokens[j + 1]?.kind === "ident") j += 2;
+      else if (tokens[j]?.value === "[") {
+        while (j < tokens.length && tokens[j].value !== "]") parts.push(tokens[j++]);
+        j++;
+      } else continue;
+      if (tokens[j]?.value !== "=" || tokens[j + 1]?.value === "=") continue;
+      parts.push(tokens[j - 1]);
+      for (let k = j + 1; k < tokens.length && tokens[k].value !== ";" && tokens[k].line === tokens[j].line; k++) parts.push(tokens[k]);
+    }
+    const hit = parts.find(sensitive);
+    if (!hit) continue;
+    out.push({
+      ruleId: "MS104",
+      severity: "high",
+      confidence: "medium",
+      loc: { line: t.line, col: t.col },
+      message: `Private data ('${hit.kind === "string" ? hit.value.slice(1, -1) : hit.value}') is saved to ${t.value}, which stores it unencrypted and lets any script on the page read it (an extension, an injected script, a compromised dependency). Keep private state in the Midnight private state provider, or encrypt it with a key the user controls.`,
+    });
+  }
   return out;
 }

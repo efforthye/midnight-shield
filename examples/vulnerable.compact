@@ -27,6 +27,11 @@ export circuit withdraw(): [] {
   assert(ownPublicKey() == owner, "not the owner");
 }
 
+// MS011: owner is what withdraw() checks, but anyone can call this and replace it.
+export circuit setOwner(newOwner: ZswapCoinPublicKey): [] {
+  owner = disclose(newOwner);
+}
+
 // MS003: a choice from 0-255 has 8 bits of entropy; publishing its hash reveals it.
 export circuit castVote(): [] {
   const h = persistentHash<Vector<2, Bytes<32>>>([pad(32, "vote:"), myChoice() as Field as Bytes<32>]);

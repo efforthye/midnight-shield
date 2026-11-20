@@ -104,6 +104,13 @@ export const RULES: RuleMeta[] = [
     summary: "In a contract with anonymous (Merkle) membership, the same identifier derived from a secret is published by several circuits, so observers can link those actions to one member.",
   },
   {
+    id: "MS011",
+    name: "unguarded-auth-update",
+    severity: "high",
+    confidence: "medium",
+    summary: "An exported circuit changes a ledger field used to authorize callers (an owner key, an admin set) without checking who is calling, so anyone can take it over.",
+  },
+  {
     id: "MS101",
     name: "remote-proof-server",
     severity: "critical",
@@ -116,6 +123,20 @@ export const RULES: RuleMeta[] = [
     severity: "high",
     confidence: "medium",
     summary: "TypeScript/JavaScript: a secret key, seed or password is passed to a log call.",
+  },
+  {
+    id: "MS103",
+    name: "hardcoded-secret",
+    severity: "critical",
+    confidence: "medium",
+    summary: "TypeScript/JavaScript: a seed, secret key or recovery phrase is written into the source as a literal.",
+  },
+  {
+    id: "MS104",
+    name: "private-state-in-browser-storage",
+    severity: "high",
+    confidence: "medium",
+    summary: "TypeScript/JavaScript: private state or a secret is saved to localStorage or sessionStorage, unencrypted and readable by any script on the page.",
   },
 ];
 

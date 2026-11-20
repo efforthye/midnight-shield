@@ -28,6 +28,12 @@ export circuit withdraw(): [] {
   assert(deriveId(secretKey()) == ownerId, "not the owner");
 }
 
+// Only the current owner can hand ownership to someone else.
+export circuit transferOwnership(newOwnerId: Bytes<32>): [] {
+  assert(deriveId(secretKey()) == ownerId, "not the owner");
+  ownerId = disclose(newOwnerId);
+}
+
 // Fresh 32-byte randomness from a witness hides the amount.
 export circuit commitAmount(amount: Uint<64>): [] {
   committed = persistentCommit<Uint<64>>(amount, randomness());

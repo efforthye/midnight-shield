@@ -10,3 +10,13 @@ export const proofProvider = httpClientProofProvider(process.env.MIDNIGHT_PROOF_
 export function debugWallet(seed: string): void {
   console.log(`restoring wallet for ${publicKeyOf(seed)} (seed length ${seed.length})`);
 }
+
+// The seed comes from the environment (or the user's wallet), never from the source.
+export const walletConfig = {
+  seed: process.env.WALLET_SEED ?? "",
+};
+
+// Only a non-sensitive preference goes to browser storage.
+export function saveTheme(theme: string): void {
+  localStorage.setItem("theme", theme);
+}
