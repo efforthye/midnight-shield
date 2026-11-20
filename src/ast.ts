@@ -67,6 +67,8 @@ export type Decl =
   | { kind: "struct"; name: string; fields: Param[]; loc: Loc }
   | { kind: "enum"; name: string; members: string[]; loc: Loc }
   | { kind: "typeAlias"; name: string; type: TypeRef; loc: Loc }
+  | { kind: "import"; target: string; isPath: boolean; prefix: string; loc: Loc }
+  | { kind: "include"; path: string; loc: Loc }
   | { kind: "module"; name: string; decls: Decl[]; loc: Loc };
 
 export interface ParseDiagnostic {

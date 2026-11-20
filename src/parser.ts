@@ -153,12 +153,29 @@ class Parser {
       return { kind: "pragma", text: parts.join(" "), loc: this.loc(startTok) };
     }
 
-    if (this.is("import") || this.is("include")) {
+    if (this.is("include")) {
       this.next();
-      if (this.is("{")) this.skipBalanced();
+      const t = this.next();
+      this.eat(";");
+      return t.kind === "string" ? { kind: "include", path: t.value.slice(1, -1), loc: this.loc(startTok) } : undefined;
+    }
+
+    if (this.is("import")) {
+      // import Name;  import "path"<args> prefix P_;  import { a, b } from "path" prefix P_;
+      this.next();
+      if (this.is("{")) {
+        this.skipBalanced();
+        this.expect("from");
+      }
+      const t = this.next();
+      const isPath = t.kind === "string";
+      const target = isPath ? t.value.slice(1, -1) : t.value;
+      this.skipTypeParams();
+      let prefix = "";
+      if (this.eat("prefix")) prefix = this.ident();
       while (!this.atEnd() && !this.is(";")) this.next();
       this.eat(";");
-      return undefined;
+      return { kind: "import", target, isPath, prefix, loc: this.loc(startTok) };
     }
 
     if (this.is("export") && this.is("{", 1)) {
@@ -580,7 +597,7 @@ class Parser {
     }
     let expr = this.parsePostfix();
     while (this.is("as")) {
-      const loc = this.loc();
+      const loc = exprLoc(expr);
       this.next();
       expr = { kind: "cast", expr, type: this.parseType(), loc };
     }
@@ -590,7 +607,8 @@ class Parser {
   private parsePostfix(): Expr {
     let expr = this.parsePrimary();
     for (;;) {
-      const loc = this.loc();
+      // postfix expressions are located at the start of the whole expression
+      const loc = exprLoc(expr);
       if (this.is(".") && this.peek(1).kind === "ident") {
         this.next();
         const property = this.ident();
