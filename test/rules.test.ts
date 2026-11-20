@@ -287,3 +287,43 @@ describe("parser", () => {
     assert.equal(count(src, "MS000"), 0);
   });
 });
+
+describe("imports", () => {
+  it("follows circuits from an imported module and reports at the call site", async () => {
+    const { lintFiles } = await import("../src/linter.js");
+    const findings = lintFiles(["test/fixtures/imports/main.compact"]);
+    const ms001 = findings.filter((f) => f.ruleId === "MS001");
+    assert.equal(ms001.length, 1);
+    assert.equal(ms001[0].file, "test/fixtures/imports/main.compact");
+    assert.equal(ms001[0].line, 9);
+  });
+
+  it("counts asserts inside imported circuits as constraints", async () => {
+    const { lintFiles } = await import("../src/linter.js");
+    const findings = lintFiles(["test/fixtures/imports/main.compact"]);
+    assert.equal(findings.filter((f) => f.ruleId === "MS002").length, 0);
+  });
+});
+
+describe("config", () => {
+  it("accepts a valid config", async () => {
+    const { validateConfig } = await import("../src/config.js");
+    const c = validateConfig({ disable: ["ms005"], failOn: "medium", ignore: ["**/test/**"] });
+    assert.deepEqual(c.disable, ["MS005"]);
+    assert.equal(c.failOn, "medium");
+  });
+
+  it("rejects unknown keys and rule IDs", async () => {
+    const { validateConfig } = await import("../src/config.js");
+    assert.throws(() => validateConfig({ disabled: ["MS005"] }), /unknown key/);
+    assert.throws(() => validateConfig({ disable: ["MS999"] }), /unknown rule/);
+  });
+
+  it("skips files matching ignore globs", async () => {
+    const { listTargetFiles } = await import("../src/linter.js");
+    const all = listTargetFiles(["test/fixtures/imports"]);
+    const some = listTargetFiles(["test/fixtures/imports"], ["**/lib/**"]);
+    assert.equal(all.length, 2);
+    assert.equal(some.length, 1);
+  });
+});

@@ -1,0 +1,16 @@
+pragma language_version >= 0.28.0;
+
+module Auth {
+  import CompactStandardLibrary;
+
+  export ledger owner: ZswapCoinPublicKey;
+
+  // Unsafe on purpose: compares a prover-supplied key.
+  export circuit isOwner(pk: ZswapCoinPublicKey): Boolean {
+    return pk == owner;
+  }
+
+  export circuit checkAmount(x: Uint<64>): [] {
+    assert(x <= 1000, "too large");
+  }
+}

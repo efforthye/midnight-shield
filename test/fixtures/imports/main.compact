@@ -1,0 +1,16 @@
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+import "./lib/Auth" prefix Auth_;
+
+export ledger total: Uint<64>;
+witness amount(): Uint<64>;
+
+export circuit withdraw(): [] {
+  assert(Auth_isOwner(ownPublicKey()), "not owner");
+}
+
+export circuit deposit(): [] {
+  const a = amount();
+  Auth_checkAmount(a);
+  total = disclose(a);
+}
