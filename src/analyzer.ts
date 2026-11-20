@@ -21,6 +21,8 @@ interface Info {
   sources: Set<string>;
   /** witnesses whose raw (not hashed or committed) value flows into this value */
   rawWitness: Set<string>;
+  /** secret-named witnesses or parameters ("w:sk", "p:secretKey") whose raw value flows into this value */
+  rawSecret?: Set<string>;
   /** built only from literals, pad(), default<>, enum members */
   constant: boolean;
   /** this value is ownPublicKey() itself (possibly wrapped), not a hash of it */
@@ -39,7 +41,7 @@ const WRAPPER_FNS = new Set(["left", "right", "some", "disclose"]);
 const LEDGER_READ_METHODS = new Set(["member", "read", "lookup", "size", "isEmpty", "checkRoot", "isFull", "head", "length", "first", "root", "history"]);
 const LOW_ENTROPY_BITS = 32;
 const STRONG_RANDOMNESS_BITS = 128;
-const MAX_INLINE_DEPTH = 4;
+const MAX_INLINE_DEPTH = 8;
 
 function empty(): Info {
   return { sources: new Set(), rawWitness: new Set(), constant: true, ownpkDirect: false, bits: 0 };
@@ -54,6 +56,10 @@ function union(infos: Info[]): Info {
   for (const i of infos) {
     i.sources.forEach((s) => out.sources.add(s));
     i.rawWitness.forEach((s) => out.rawWitness.add(s));
+    if (i.rawSecret?.size) {
+      out.rawSecret = out.rawSecret ?? new Set();
+      i.rawSecret.forEach((s) => out.rawSecret!.add(s));
+    }
     out.constant = out.constant && i.constant;
     out.ownpkDirect = out.ownpkDirect || i.ownpkDirect;
     out.bits = out.bits === undefined || i.bits === undefined ? undefined : out.bits + i.bits;
@@ -63,6 +69,23 @@ function union(infos: Info[]): Info {
     }
   }
   return out;
+}
+
+const SECRET_WORDS = new Set(["sk", "secret", "seed", "mnemonic", "password", "passphrase", "privkey", "pin"]);
+
+/** Does an identifier look like it names a secret? (`secretKey`, `localSk`, `_secret`, `privateKey`) */
+export function isSecretName(name: string): boolean {
+  const words = name
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  if (words.some((w) => SECRET_WORDS.has(w))) return true;
+  return words.some((w, i) => w === "private" && words[i + 1] === "key");
+}
+
+function noSecret(i: Info): Info {
+  return { ...i, rawSecret: undefined };
 }
 
 function isPrivate(i: Info): boolean {
@@ -89,6 +112,23 @@ interface Frame {
   prefix: string;
   /** when running code from another file: the call site in the analyzed file */
   anchor?: Loc;
+  /** MS008 state, shared with inlined helpers of the same top-level circuit */
+  nullifier: NullifierState;
+}
+
+interface NullifierState {
+  /** a Merkle membership proof over private data (anonymous authorization) */
+  anonAuth?: Loc;
+  /** an assert that a value is NOT yet in a set (the nullifier check) */
+  negMember: boolean;
+  /** the circuit changes ledger state */
+  writes: boolean;
+  /** MS009: Merkle paths whose root is checked, by variable name */
+  checkedPaths: Map<string, Loc>;
+  /** MS009: Merkle paths whose `.leaf` is compared in an assert */
+  boundPaths: Set<string>;
+  /** MS009: variables holding `merkleTreePathRoot(path)`, mapped to the path variable */
+  rootVars: Map<string, string>;
 }
 
 /** Resolves an `import "path"` or `include "path"` to a parsed program. */
@@ -236,16 +276,35 @@ export class Analyzer {
   private analyzeDecls(decls: Decl[]): void {
     for (const d of decls) {
       if (d.kind === "module") this.analyzeDecls(d.decls);
-      if (d.kind === "constructor") this.analyzeFunction("constructor", d.params, d.body);
-      if (d.kind === "circuit" && d.body) this.analyzeFunction(d.name, d.params, d.body);
+      if (d.kind === "constructor") this.analyzeFunction("constructor", d.params, d.body, false);
+      if (d.kind === "circuit" && d.body) this.analyzeFunction(d.name, d.params, d.body, d.exported);
     }
   }
 
-  private analyzeFunction(name: string, params: Param[], body: Stmt[]): void {
+  private analyzeFunction(name: string, params: Param[], body: Stmt[], exported: boolean): void {
     const vars = new Map<string, Info>();
     for (const p of params) vars.set(p.name, this.paramInfo(p));
-    const frame: Frame = { name, scopes: [{ vars }], silent: false, depth: 0, stack: [name], returns: [], commitRand: new Map(), prefix: "" };
+    const nullifier: NullifierState = { negMember: false, writes: false, checkedPaths: new Map(), boundPaths: new Set(), rootVars: new Map() };
+    const frame: Frame = { name, scopes: [{ vars }], silent: false, depth: 0, stack: [name], returns: [], commitRand: new Map(), prefix: "", nullifier };
     this.execBlock(body, frame);
+
+    for (const [path, loc] of nullifier.checkedPaths) {
+      if (!nullifier.boundPaths.has(path)) {
+        this.report(
+          "MS009",
+          loc,
+          `The root of Merkle path '${path}' is checked, but nothing asserts that '${path}.leaf' belongs to the caller. Merkle paths are public, so anyone can submit another member's path and pass. Add e.g. assert(${path}.leaf == deriveLeaf(secretKey())).`,
+        );
+      }
+    }
+
+    if (exported && nullifier.anonAuth && nullifier.writes && !nullifier.negMember) {
+      this.report(
+        "MS008",
+        nullifier.anonAuth,
+        `'${name}' authorizes the caller with an anonymous Merkle membership proof and then changes state, but never checks a nullifier. The same member can repeat this action. If each member should act once, derive a nullifier (hash of a tag and the member's secret), assert it is not in a set, then insert it.`,
+      );
+    }
   }
 
   private paramInfo(p: Param): Info {
@@ -256,6 +315,7 @@ export class Analyzer {
       ownpkDirect: false,
       bits: this.typeBits(p.type),
       type: p.type,
+      rawSecret: isSecretName(p.name) ? new Set([`p:${p.name}`]) : undefined,
     };
   }
 
@@ -348,6 +408,8 @@ export class Analyzer {
     const scope = frame.scopes[frame.scopes.length - 1];
     switch (s.kind) {
       case "const": {
+        const path = findPathRootArg(s.init);
+        if (path && s.names.length === 1) frame.nullifier.rootVars.set(this.pathKey(s.names[0], frame), path);
         const info = this.evalExpr(s.init, frame);
         if (s.type) info.type = s.type;
         for (const n of s.names) scope.vars.set(n, info);
@@ -357,7 +419,7 @@ export class Analyzer {
         const value = this.evalExpr(s.value, frame);
         this.evalExpr(s.target, frame);
         const root = rootIdent(s.target);
-        if (root && !this.lookup(root, frame) && this.resolveName(this.ledgers, root, frame)) this.sink(value, s.loc, frame);
+        if (root && !this.lookup(root, frame) && this.resolveName(this.ledgers, root, frame)) this.sink(value, s.loc, frame, true);
         break;
       }
       case "if": {
@@ -393,8 +455,17 @@ export class Analyzer {
   }
 
   /** A value becomes public here (disclose() or a ledger write). */
-  private sink(info: Info, loc: Loc, frame: Frame): void {
+  private sink(info: Info, loc: Loc, frame: Frame, isWrite = false): void {
+    if (isWrite) frame.nullifier.writes = true;
     for (const w of info.rawWitness) if (!this.witnessSinks.has(w)) this.witnessSinks.set(w, frame.anchor ?? loc);
+    if (info.rawSecret?.size) {
+      const names = [...info.rawSecret].map((s) => (s.startsWith("w:") ? `witness '${s.slice(2)}()'` : `parameter '${s.slice(2)}'`));
+      this.report(
+        "MS007",
+        frame.anchor ?? loc,
+        `The raw value of ${names.join(" and ")} is made public here, and the name says it is a secret. Anyone can read it from the ledger or transaction. Publish a domain-separated hash or a commitment of it instead, or keep it private.`,
+      );
+    }
     if (info.lowHash && !frame.silent) {
       this.report(
         "MS003",
@@ -453,7 +524,10 @@ export class Analyzer {
         }
         const out = union([l, r]);
         out.ownpkDirect = false;
-        if (["==", "!=", "<", "<=", ">", ">=", "&&", "||"].includes(e.op)) out.bits = isPrivate(out) ? 1 : 0;
+        if (["==", "!=", "<", "<=", ">", ">=", "&&", "||"].includes(e.op)) {
+          out.bits = isPrivate(out) ? 1 : 0;
+          out.rawSecret = undefined; // a comparison reveals one bit, not the secret
+        }
         return out;
       }
       case "lambda": {
@@ -500,15 +574,26 @@ export class Analyzer {
       const isLedger = root !== undefined && !this.lookup(root, frame) && this.resolveName(this.ledgers, root, frame) !== undefined;
       if (isLedger) {
         if (callee.property === "member" && args.some((a) => a.ownpkDirect)) this.ownpkCompare(e.loc, frame);
+        if (callee.property === "checkRoot" && e.args[0] && !frame.anchor) {
+          let path = findPathRootArg(e.args[0]);
+          const argRoot = e.args[0].kind === "ident" ? e.args[0].name : undefined;
+          if (!path && argRoot) path = frame.nullifier.rootVars.get(this.pathKey(argRoot, frame));
+          if (path) {
+            const key = this.pathKey(path, frame);
+            if (!frame.nullifier.checkedPaths.has(key)) frame.nullifier.checkedPaths.set(key, e.loc);
+          }
+        }
         if (LEDGER_READ_METHODS.has(callee.property)) {
           const out = union([obj, ...args]);
           out.rawWitness = new Set();
+          out.rawSecret = undefined;
           out.bits = callee.property === "member" ? (args.some(isPrivate) ? 1 : 0) : 0;
           out.ownpkDirect = false;
           return out;
         }
         // ledger write: insert, increment, write, push, ...
-        for (const a of args) this.sink(a, e.loc, frame);
+        frame.nullifier.writes = true;
+        for (const a of args) this.sink(a, e.loc, frame, true);
         return empty();
       }
       const out = union([obj, ...args]);
@@ -525,6 +610,7 @@ export class Analyzer {
     if (name === "assert") {
       const infos = e.args.map((a) => this.evalExpr(a, frame));
       if (infos[0]) this.markConstrained(infos[0]);
+      if (e.args[0]) this.scanAuthorization(e.args[0], false, frame);
       return empty();
     }
 
@@ -543,6 +629,7 @@ export class Analyzer {
       return {
         sources: new Set([`w:${witnessName}`]),
         rawWitness: new Set([witnessName]),
+        rawSecret: isSecretName(witnessName.slice(witnessName.lastIndexOf("_") + 1)) || isSecretName(witnessName) ? new Set([`w:${witnessName}`]) : undefined,
         constant: false,
         ownpkDirect: false,
         bits: this.typeBits(w.returnType),
@@ -559,7 +646,7 @@ export class Analyzer {
       // After disclose() the value is public: it carries no secret entropy.
       const sources = new Set([...v.sources].filter((x) => !x.startsWith("w:") && !x.startsWith("p:")));
       sources.add("disclosed");
-      return { ...v, sources, bits: 0, lowHash: undefined };
+      return { ...v, sources, bits: 0, lowHash: undefined, rawSecret: undefined };
     }
 
     if (name && WRAPPER_FNS.has(name)) return union(plain);
@@ -567,11 +654,52 @@ export class Analyzer {
     const circuitName = name ? this.resolveName(this.circuits, name, frame) : undefined;
     if (circuitName) return this.inlineCircuit(circuitName, plain, e.loc, frame);
 
-    // unknown or standard-library call
+    // unknown or standard-library call: the result is derived (e.g. a public key
+    // from a secret), so it is no longer the raw secret
     const out = union(plain);
     out.ownpkDirect = false;
+    out.rawSecret = undefined;
     out.bits = out.bits === undefined ? undefined : out.bits;
     return out;
+  }
+
+  /** MS008: look for Merkle membership proofs and nullifier checks inside an assert condition. */
+  private scanAuthorization(e: Expr, negated: boolean, frame: Frame): void {
+    if (e.kind === "unary" && e.op === "!") return this.scanAuthorization(e.arg, !negated, frame);
+    if (e.kind === "call" && e.callee.kind === "ident" && e.callee.name === "disclose" && e.args[0]) {
+      return this.scanAuthorization(e.args[0], negated, frame);
+    }
+    if (e.kind === "binary" && (e.op === "==" || e.op === "!=")) {
+      // MS009: `path.leaf == ...` binds the Merkle path to a value
+      for (const side of [e.left, e.right]) {
+        if (side.kind === "member" && side.property === "leaf") {
+          const root = rootIdent(side.object);
+          if (root) frame.nullifier.boundPaths.add(this.pathKey(root, frame));
+        }
+      }
+      return;
+    }
+    if (e.kind === "binary" && (e.op === "&&" || e.op === "||")) {
+      this.scanAuthorization(e.left, negated, frame);
+      this.scanAuthorization(e.right, negated, frame);
+      return;
+    }
+    if (e.kind === "call" && e.callee.kind === "member") {
+      const root = rootIdent(e.callee.object);
+      const isLedger = root !== undefined && !this.lookup(root, frame) && this.resolveName(this.ledgers, root, frame) !== undefined;
+      if (!isLedger) return;
+      const method = e.callee.property;
+      if (method === "member" && negated) frame.nullifier.negMember = true;
+      if (method === "checkRoot" && !negated) {
+        const args = e.args.map((a) => this.evalExpr(a, frame));
+        if (args.some((a) => isPrivate(a) || a.sources.has("disclosed"))) frame.nullifier.anonAuth = frame.nullifier.anonAuth ?? frame.anchor ?? e.loc;
+      }
+    }
+  }
+
+  /** Paths are tracked by name within one top-level circuit; helper frames get their own namespace. */
+  private pathKey(name: string, frame: Frame): string {
+    return frame.depth === 0 ? name : `${frame.stack.join(">")}:${name}`;
   }
 
   private evalLambda(l: Extract<Expr, { kind: "lambda" }>, data: Info, frame: Frame): Info {
@@ -685,9 +813,11 @@ export class Analyzer {
     const entry = this.circuits.get(name)!;
     const c = entry.decl;
     if (!c.body || frame.depth >= MAX_INLINE_DEPTH || frame.stack.includes(name)) {
+      // Too deep or recursive: treat the result as derived from the arguments.
       const out = union(args);
       out.ownpkDirect = false;
       out.rawWitness = new Set();
+      out.rawSecret = undefined;
       return out;
     }
     const vars = new Map<string, Info>();
@@ -705,6 +835,7 @@ export class Analyzer {
       commitRand: new Map(),
       prefix: entry.prefix,
       anchor: frame.anchor ?? (entry.external ? loc : undefined),
+      nullifier: frame.nullifier,
     };
     for (const s of c.body) this.execStmt(s, inner);
     if (inner.ownpkCompare) {
@@ -724,6 +855,15 @@ export class Analyzer {
     }
     return ret;
   }
+}
+
+/** In `merkleTreePathRoot<n, T>(path)` (possibly wrapped in disclose), return `path`'s variable name. */
+function findPathRootArg(e: Expr): string | undefined {
+  if (e.kind === "call" && e.callee.kind === "ident") {
+    if (e.callee.name === "disclose" && e.args[0]) return findPathRootArg(e.args[0]);
+    if (/^merkleTreePathRoot/.test(e.callee.name) && e.args[0]) return rootIdent(e.args[0]);
+  }
+  return undefined;
 }
 
 function rootIdent(e: Expr): string | undefined {

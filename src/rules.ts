@@ -50,6 +50,24 @@ export const RULES: RuleMeta[] = [
     summary: "A hash has no constant domain tag, so the same input hashed for different purposes gives linkable outputs.",
   },
   {
+    id: "MS007",
+    name: "disclosed-secret",
+    severity: "high",
+    summary: "The raw value of a secret-named witness or parameter (secret key, seed, password) is made public.",
+  },
+  {
+    id: "MS008",
+    name: "missing-nullifier",
+    severity: "medium",
+    summary: "A circuit authorizes with an anonymous Merkle membership proof and changes state without a nullifier check, so the action can be repeated.",
+  },
+  {
+    id: "MS009",
+    name: "unbound-merkle-path",
+    severity: "high",
+    summary: "A Merkle path's root is checked, but the path's leaf is never tied to the caller, so anyone can reuse a public path.",
+  },
+  {
     id: "MS006",
     name: "missing-pragma",
     severity: "info",
