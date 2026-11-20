@@ -119,7 +119,7 @@ describe("CLI", () => {
     run(["c.compact", "--badge", "badge.json", "--fail-on", "none"], dir);
     const badge = JSON.parse(readFileSync(join(dir, "badge.json"), "utf8"));
     assert.equal(badge.label, "midnight shield");
-    assert.equal(badge.color, "critical");
+    assert.equal(badge.color, "red");
   });
 
   it("writes a Markdown report", () => {

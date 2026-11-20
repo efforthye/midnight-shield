@@ -50,11 +50,11 @@ describe("privacy diff", () => {
 
 describe("status badge", () => {
   it("is green with no findings and names the worst severities otherwise", () => {
-    assert.deepEqual([badgeJson([]).message, badgeJson([]).color], ["no issues", "brightgreen"]);
+    assert.deepEqual([badgeJson([]).message, badgeJson([]).color], ["verified", "brightgreen"]);
     const b = badgeJson(lintSource(readFileSync("examples/vulnerable.compact", "utf8"), "v.compact"));
     assert.equal(b.schemaVersion, 1);
     assert.match(b.message, /^1 critical, \d+ high \+$/);
-    assert.equal(b.color, "critical");
+    assert.equal(b.color, "red");
     assert.match(b.logoSvg, /^<svg/);
   });
 });

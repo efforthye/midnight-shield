@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Added
 
 - **Privacy diff on pull requests.** `midnight-shield snapshot` saves findings and the disclosure map; `midnight-shield diff base.json head.json` shows what a change newly makes public, protections that got weaker, and new and fixed findings (`--format text|markdown|json`, `--fail-on` for new findings only). The GitHub Action comments it on every pull request and updates the same comment as you push (`pr-comment`, on by default).
-- **Status badge.** `--badge <file>` writes a shields.io endpoint badge (`no issues`, or the most severe counts, colored by severity, with the logo). The GitHub Action publishes it on pushes to the default branch with `badge: true`.
+- **Status badge.** `--badge <file>` writes a shields.io endpoint badge with the logo: green `verified` when the scan is clean, otherwise the most severe counts in red (critical, high), orange (medium) or yellow (low). The GitHub Action publishes it on pushes to the default branch with `badge: true`.
 - **Suggested fixes.** Each finding comes with the flagged line rewritten, shown as a diff in the terminal, the Markdown report, JSON and the playground (with a Copy fix button). `--no-suggestions` hides them.
 - **MS011 unguarded-auth-update**: an exported circuit changes an owner key or an admin allow-list without checking the caller.
 - **MS103 hardcoded-secret**: a seed, secret key or recovery phrase written into DApp source.
