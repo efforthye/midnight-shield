@@ -1,47 +1,69 @@
 {
   "name": "midnight-shield",
-  "version": "0.3.0",
-  "description": "Static analyzer for Midnight Compact contracts. Finds security and privacy issues before deploy.",
+  "version": "0.4.0",
+  "description": "Static analyzer for Midnight Compact contracts and their TypeScript code. Finds security and privacy issues before deploy.",
+  "keywords": [
+    "midnight",
+    "compact",
+    "zero-knowledge",
+    "zk",
+    "privacy",
+    "security",
+    "static-analysis",
+    "linter",
+    "smart-contracts",
+    "sarif"
+  ],
+  "homepage": "https://github.com/efforthye/midnight-shield#readme",
+  "bugs": {
+    "url": "https://github.com/efforthye/midnight-shield/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/efforthye/midnight-shield.git"
+  },
+  "license": "MIT",
+  "author": "efforthye",
   "type": "module",
   "bin": {
     "midnight-shield": "dist/src/cli.js"
   },
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist/src",
-    "docs",
+    "docs/rules",
     "skills",
     "action.yml",
     "CHANGELOG.md"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepare": "tsc -p tsconfig.json",
     "test": "npm run build && node scripts/run-tests.mjs",
     "coverage": "npm run build && node scripts/run-tests.mjs --experimental-test-coverage",
+    "verify": "npm run build && node scripts/verify-corpus.mjs",
     "demo": "node dist/src/cli.js examples/",
-    "verify": "npm run build && node scripts/verify-corpus.mjs"
+    "playground": "node scripts/build-playground.mjs",
+    "prepublishOnly": "npm test"
   },
-  "engines": {
-    "node": ">=20"
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
-  "keywords": [
-    "midnight",
-    "compact",
-    "zero-knowledge",
-    "linter",
-    "static-analysis",
-    "privacy",
-    "security"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/efforthye/midnight-shield.git"
-  },
-  "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "esbuild": "^0.24.2",
     "typescript": "^5.9.0"
   }
 }
