@@ -1,6 +1,7 @@
 {
   "name": "midnight-shield-vscode",
   "displayName": "Midnight Shield",
+  "icon": "icon.png",
   "description": "Security and privacy diagnostics for Midnight Compact contracts and their TypeScript code, as you type.",
   "version": "0.4.0",
   "publisher": "efforthye",
