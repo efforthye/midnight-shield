@@ -85,12 +85,28 @@ interface Frame {
   ownpkCompare?: Loc;
   /** randomness expressions used by commitments in this function, for reuse detection */
   commitRand: Map<string, { loc: Loc; value: string }>;
+  /** name prefix of the module whose code is running (for imported modules) */
+  prefix: string;
+  /** when running code from another file: the call site in the analyzed file */
+  anchor?: Loc;
 }
+
+/** Resolves an `import "path"` or `include "path"` to a parsed program. */
+export type ImportResolver = (fromFile: string | undefined, target: string) => { file: string; program: Program } | undefined;
+
+interface CircuitEntry {
+  decl: Extract<Decl, { kind: "circuit" }>;
+  prefix: string;
+  external: boolean;
+}
+
+const MAX_IMPORT_DEPTH = 6;
 
 export class Analyzer {
   private ledgers = new Map<string, TypeRef>();
   private witnesses = new Map<string, Extract<Decl, { kind: "witness" }>>();
-  private circuits = new Map<string, Extract<Decl, { kind: "circuit" }>>();
+  private circuits = new Map<string, CircuitEntry>();
+  private visitedFiles = new Set<string>();
   private enums = new Map<string, number>();
   private structs = new Map<string, Param[]>();
   private aliases = new Map<string, TypeRef>();
@@ -101,36 +117,68 @@ export class Analyzer {
   private witnessSinks = new Map<string, Loc>();
   private hashSites = new Map<string, { loc: Loc; tagged: boolean; private: boolean }>();
 
-  constructor(private program: Program) {
-    this.collect(program.decls);
+  constructor(
+    private program: Program,
+    private resolver?: ImportResolver,
+    private file?: string,
+  ) {
+    if (file) this.visitedFiles.add(file);
+    this.collect(program.decls, "", false, 0, file);
   }
 
-  private collect(decls: Decl[]): void {
+  /**
+   * Register declarations. Imported modules are registered under their import
+   * prefix (e.g. `Utils_hash`) so calls from the analyzed file resolve, and
+   * marked external: they are followed when called, but not reported on.
+   */
+  private collect(decls: Decl[], prefix: string, external: boolean, depth: number, file: string | undefined): void {
+    const setType = <T>(map: Map<string, T>, name: string, value: T) => {
+      map.set(prefix + name, value);
+      if (prefix && !map.has(name)) map.set(name, value);
+    };
     for (const d of decls) {
       switch (d.kind) {
         case "ledger":
-          this.ledgers.set(d.name, d.type);
+          this.ledgers.set(prefix + d.name, d.type);
           break;
         case "witness":
-          this.witnesses.set(d.name, d);
+          this.witnesses.set(prefix + d.name, d);
           break;
         case "circuit":
-          this.circuits.set(d.name, d);
+          this.circuits.set(prefix + d.name, { decl: d, prefix, external });
           break;
         case "enum":
-          this.enums.set(d.name, d.members.length);
+          setType(this.enums, d.name, d.members.length);
           break;
         case "struct":
-          this.structs.set(d.name, d.fields);
+          setType(this.structs, d.name, d.fields);
           break;
         case "typeAlias":
-          this.aliases.set(d.name, d.type);
+          setType(this.aliases, d.name, d.type);
           break;
         case "module":
-          this.collect(d.decls);
+          this.collect(d.decls, prefix, external, depth, file);
           break;
+        case "import":
+        case "include": {
+          if (!this.resolver || depth >= MAX_IMPORT_DEPTH) break;
+          if (d.kind === "import" && !d.isPath) break; // standard library or a module in this file
+          const target = d.kind === "import" ? d.target : d.path;
+          const resolved = this.resolver(file, target);
+          if (!resolved || this.visitedFiles.has(resolved.file + "|" + prefix)) break;
+          this.visitedFiles.add(resolved.file + "|" + prefix);
+          const nextPrefix = d.kind === "import" ? prefix + d.prefix : prefix;
+          this.collect(resolved.program.decls, nextPrefix, true, depth + 1, resolved.file);
+          break;
+        }
       }
     }
+  }
+
+  /** Resolve a name used inside code of the module with `frame.prefix`. */
+  private resolveName<T>(map: Map<string, T>, name: string, frame: Frame): string | undefined {
+    if (frame.prefix && map.has(frame.prefix + name)) return frame.prefix + name;
+    return map.has(name) ? name : undefined;
   }
 
   run(): RawFinding[] {
@@ -196,7 +244,7 @@ export class Analyzer {
   private analyzeFunction(name: string, params: Param[], body: Stmt[]): void {
     const vars = new Map<string, Info>();
     for (const p of params) vars.set(p.name, this.paramInfo(p));
-    const frame: Frame = { name, scopes: [{ vars }], silent: false, depth: 0, stack: [name], returns: [], commitRand: new Map() };
+    const frame: Frame = { name, scopes: [{ vars }], silent: false, depth: 0, stack: [name], returns: [], commitRand: new Map(), prefix: "" };
     this.execBlock(body, frame);
   }
 
@@ -309,7 +357,7 @@ export class Analyzer {
         const value = this.evalExpr(s.value, frame);
         this.evalExpr(s.target, frame);
         const root = rootIdent(s.target);
-        if (root && !this.lookup(root, frame) && this.ledgers.has(root)) this.sink(value, s.loc, frame);
+        if (root && !this.lookup(root, frame) && this.resolveName(this.ledgers, root, frame)) this.sink(value, s.loc, frame);
         break;
       }
       case "if": {
@@ -346,7 +394,7 @@ export class Analyzer {
 
   /** A value becomes public here (disclose() or a ledger write). */
   private sink(info: Info, loc: Loc, frame: Frame): void {
-    for (const w of info.rawWitness) if (!this.witnessSinks.has(w)) this.witnessSinks.set(w, loc);
+    for (const w of info.rawWitness) if (!this.witnessSinks.has(w)) this.witnessSinks.set(w, frame.anchor ?? loc);
     if (info.lowHash && !frame.silent) {
       this.report(
         "MS003",
@@ -401,7 +449,7 @@ export class Analyzer {
         // Comparing ownPublicKey() to a stored or supplied key is authorization;
         // comparing it to a constant (e.g. the zero key) is only a sanity check.
         if ((e.op === "==" || e.op === "!=") && ((l.ownpkDirect && !r.constant) || (r.ownpkDirect && !l.constant))) {
-          this.ownpkCompare(e.loc, frame);
+          this.ownpkCompare(l.ownpkDirect ? e.left.loc : e.right.loc, frame);
         }
         const out = union([l, r]);
         out.ownpkDirect = false;
@@ -421,8 +469,9 @@ export class Analyzer {
     const local = this.lookup(name, frame);
     if (local) return local;
     if (name === "true" || name === "false" || name === "default") return empty();
-    if (this.ledgers.has(name)) {
-      return { sources: new Set([`l:${name}`]), rawWitness: new Set(), constant: false, ownpkDirect: false, bits: 0, type: this.ledgers.get(name) };
+    const ledger = this.resolveName(this.ledgers, name, frame);
+    if (ledger) {
+      return { sources: new Set([`l:${ledger}`]), rawWitness: new Set(), constant: false, ownpkDirect: false, bits: 0, type: this.ledgers.get(ledger) };
     }
     if (this.enums.has(name)) return empty();
     return unknown();
@@ -448,7 +497,7 @@ export class Analyzer {
       const obj = this.evalExpr(callee.object, frame);
       const args = e.args.map((a) => this.evalExpr(a, frame));
       const root = rootIdent(callee.object);
-      const isLedger = root !== undefined && !this.lookup(root, frame) && this.ledgers.has(root);
+      const isLedger = root !== undefined && !this.lookup(root, frame) && this.resolveName(this.ledgers, root, frame) !== undefined;
       if (isLedger) {
         if (callee.property === "member" && args.some((a) => a.ownpkDirect)) this.ownpkCompare(e.loc, frame);
         if (LEDGER_READ_METHODS.has(callee.property)) {
@@ -488,11 +537,12 @@ export class Analyzer {
       return union([...plain, ...results]);
     }
 
-    if (name && this.witnesses.has(name)) {
-      const w = this.witnesses.get(name)!;
+    const witnessName = name ? this.resolveName(this.witnesses, name, frame) : undefined;
+    if (witnessName) {
+      const w = this.witnesses.get(witnessName)!;
       return {
-        sources: new Set([`w:${name}`]),
-        rawWitness: new Set([name]),
+        sources: new Set([`w:${witnessName}`]),
+        rawWitness: new Set([witnessName]),
         constant: false,
         ownpkDirect: false,
         bits: this.typeBits(w.returnType),
@@ -514,7 +564,8 @@ export class Analyzer {
 
     if (name && WRAPPER_FNS.has(name)) return union(plain);
 
-    if (name && this.circuits.has(name)) return this.inlineCircuit(name, plain, e.loc, frame);
+    const circuitName = name ? this.resolveName(this.circuits, name, frame) : undefined;
+    if (circuitName) return this.inlineCircuit(circuitName, plain, e.loc, frame);
 
     // unknown or standard-library call
     const out = union(plain);
@@ -553,11 +604,13 @@ export class Analyzer {
 
     // MS005: decided at the end, because a helper circuit may receive its tag
     // as an argument from the caller (seen when the helper is inlined).
-    const key = `${e.loc.line}:${e.loc.col}`;
-    const site = this.hashSites.get(key) ?? { loc: e.loc, tagged: false, private: false };
-    if (infos.some((i) => i.constant)) site.tagged = true;
-    if (isPrivate(all)) site.private = true;
-    this.hashSites.set(key, site);
+    if (!frame.anchor) {
+      const key = `${e.loc.line}:${e.loc.col}`;
+      const site = this.hashSites.get(key) ?? { loc: e.loc, tagged: false, private: false };
+      if (infos.some((i) => i.constant)) site.tagged = true;
+      if (isPrivate(all)) site.private = true;
+      this.hashSites.set(key, site);
+    }
 
     const out: Info = {
       sources: new Set(all.sources),
@@ -571,7 +624,7 @@ export class Analyzer {
     // high-entropy secret is mixed in, the result is safe even when an input
     // was itself a low-entropy hash.
     if (isPrivate(all) && all.bits !== undefined && all.bits <= LOW_ENTROPY_BITS) {
-      out.lowHash = all.lowHash ?? e.loc;
+      out.lowHash = all.lowHash ?? frame.anchor ?? e.loc;
       out.lowHashBits = all.bits;
     }
     return out;
@@ -629,7 +682,8 @@ export class Analyzer {
   }
 
   private inlineCircuit(name: string, args: Info[], loc: Loc, frame: Frame): Info {
-    const c = this.circuits.get(name)!;
+    const entry = this.circuits.get(name)!;
+    const c = entry.decl;
     if (!c.body || frame.depth >= MAX_INLINE_DEPTH || frame.stack.includes(name)) {
       const out = union(args);
       out.ownpkDirect = false;
@@ -649,6 +703,8 @@ export class Analyzer {
       stack: [...frame.stack, name],
       returns: [],
       commitRand: new Map(),
+      prefix: entry.prefix,
+      anchor: frame.anchor ?? (entry.external ? loc : undefined),
     };
     for (const s of c.body) this.execStmt(s, inner);
     if (inner.ownpkCompare) {
@@ -657,7 +713,7 @@ export class Analyzer {
         this.report(
           "MS001",
           loc,
-          `ownPublicKey() is passed to '${name}()', which compares it to authorize the caller (line ${inner.ownpkCompare.line}). It is supplied by the prover, so this check can be bypassed. Prove knowledge of a secret instead.`,
+          `ownPublicKey() is passed to '${name}()', which compares it to authorize the caller (${inner.anchor ? "in an imported module" : `line ${inner.ownpkCompare.line}`}). It is supplied by the prover, so this check can be bypassed. Prove knowledge of a secret instead.`,
         );
     }
     const ret = inner.returns.length ? union(inner.returns) : empty();
