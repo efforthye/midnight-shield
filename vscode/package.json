@@ -1,0 +1,79 @@
+{
+  "name": "midnight-shield-vscode",
+  "displayName": "Midnight Shield",
+  "description": "Security and privacy diagnostics for Midnight Compact contracts and their TypeScript code, as you type.",
+  "version": "0.4.0",
+  "publisher": "efforthye",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/efforthye/midnight-shield.git",
+    "directory": "vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Linters"],
+  "keywords": ["midnight", "compact", "zero-knowledge", "security", "privacy"],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:compact",
+    "workspaceContains:**/*.compact"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "compact",
+        "aliases": ["Compact", "compact"],
+        "extensions": [".compact"]
+      }
+    ],
+    "commands": [
+      {
+        "command": "midnightShield.scanWorkspace",
+        "title": "Midnight Shield: Scan workspace"
+      },
+      {
+        "command": "midnightShield.showDisclosures",
+        "title": "Midnight Shield: Show disclosure map for this file"
+      }
+    ],
+    "configuration": {
+      "title": "Midnight Shield",
+      "properties": {
+        "midnightShield.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Midnight Shield diagnostics."
+        },
+        "midnightShield.minSeverity": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low", "info"],
+          "default": "info",
+          "description": "Hide findings below this severity."
+        },
+        "midnightShield.minConfidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "default": "low",
+          "description": "Hide findings below this confidence."
+        },
+        "midnightShield.checkTypeScript": {
+          "type": "boolean",
+          "default": true,
+          "description": "Also check TypeScript and JavaScript files (remote proof server, secrets in logs)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "package": "npm run build && vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.9.0"
+  }
+}
