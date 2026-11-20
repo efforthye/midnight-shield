@@ -34,6 +34,9 @@ Work through findings in order: critical, high, medium, low, info. For each one,
 | MS003 `low-entropy-hash` | Replace the hash with `persistentCommit(value, randomness)` using fresh `Bytes<32>` randomness from a witness, or mix a 32-byte secret into the hash. |
 | MS004 `weak-commitment-randomness` | Use fresh 32-byte randomness from a witness for every commitment. Never use constants, ledger values, or the same salt twice. |
 | MS005 `missing-domain-separation` | Add a constant tag as the first hash input, e.g. `pad(32, "<app>:<purpose>:")`, unique per purpose. |
+| MS007 `disclosed-secret` | Never disclose a secret key, seed, or password. Publish `persistentHash([pad(32, "<app>:id:"), sk])` instead. |
+| MS008 `missing-nullifier` | Derive a nullifier `persistentHash([pad(32, "<app>:<action>:"), sk])`, `assert(!used.member(n))`, then `used.insert(n)`. |
+| MS009 `unbound-merkle-path` | Add `assert(disclose(path.leaf == deriveLeaf(secretKey())), "...")` next to the `checkRoot` call. |
 | MS006 `missing-pragma` | Add `pragma language_version >= 0.28.0;` (or the version the project uses) at the top. |
 | MS000 `parse-error` | Not a bug in the contract. Tell the user the analyzer skipped that part. |
 
@@ -52,7 +55,7 @@ Only suppress when the code is intentionally that way, and say why in the same c
 return persistentHash<Vector<2, Bytes<32>>>([tag, sk]);
 ```
 
-Never suppress MS001 or MS003 to make a scan pass. Report them to the user instead if you cannot fix them.
+Never suppress MS001, MS003, MS007 or MS009 to make a scan pass. Report them to the user instead if you cannot fix them.
 
 ## Report to the user
 
