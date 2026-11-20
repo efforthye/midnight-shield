@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { writeFileSync } from "node:fs";
-import { findCompactFiles, lintFiles, type LintOptions } from "./linter.js";
+import { existsSync, writeFileSync } from "node:fs";
+import { CONFIG_FILE, ConfigError, DEFAULT_CONFIG, loadConfig } from "./config.js";
+import { lintFiles, listTargetFiles, type Finding, type LintOptions } from "./linter.js";
 import { VERSION, formatJson, formatSarif, formatText } from "./reporters.js";
 import { RULES, SEVERITY_ORDER, type Severity } from "./rules.js";
 
@@ -9,20 +10,26 @@ Static analyzer for Midnight Compact contracts.
 
 Usage:
   midnight-shield [paths...] [options]
+  midnight-shield --init
 
 Options:
   -f, --format <text|json|sarif>   Output format (default: text)
   -o, --output <file>              Write the report to a file
+  -c, --config <file>              Config file (default: ./${CONFIG_FILE} if present)
       --fail-on <severity>         Exit with code 1 if a finding is at or above
                                    this severity (default: high; "none" to never fail)
       --min-severity <severity>    Hide findings below this severity (default: info)
       --disable <MS001,MS005>      Comma-separated rule IDs to skip
+      --ignore <glob>              Skip files matching a glob (repeatable)
+      --no-code-frame              Do not print the source line under each finding
       --list-rules                 Print all rules and exit
+      --init                       Create ${CONFIG_FILE} with default settings
       --no-color                   Disable colored output
   -v, --version                    Print the version
   -h, --help                       Show this help
 
 Severities: critical, high, medium, low, info
+Command-line options override the config file.
 
 Suppress a finding in code:
   // shield-disable-next-line MS005
@@ -44,9 +51,13 @@ function main(argv: string[]): void {
   const paths: string[] = [];
   let format = "text";
   let output: string | undefined;
-  let failOn: Severity | "none" = "high";
-  let color = process.stdout.isTTY && !process.env.NO_COLOR;
-  const options: LintOptions = {};
+  let configPath: string | undefined;
+  let failOn: Severity | "none" | undefined;
+  let minSeverity: Severity | undefined;
+  let disable: string[] | undefined;
+  const ignore: string[] = [];
+  let codeFrame = true;
+  let color = (Boolean(process.stdout.isTTY) || Boolean(process.env.FORCE_COLOR)) && !process.env.NO_COLOR;
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -67,6 +78,11 @@ function main(argv: string[]): void {
       case "--list-rules":
         for (const r of RULES) process.stdout.write(`${r.id}  ${r.severity.padEnd(8)} ${r.name.padEnd(28)} ${r.summary}\n`);
         return;
+      case "--init":
+        if (existsSync(CONFIG_FILE)) fail(`${CONFIG_FILE} already exists`);
+        writeFileSync(CONFIG_FILE, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n");
+        process.stdout.write(`Created ${CONFIG_FILE}\n`);
+        return;
       case "-f":
       case "--format":
         format = value();
@@ -76,19 +92,29 @@ function main(argv: string[]): void {
       case "--output":
         output = value();
         break;
+      case "-c":
+      case "--config":
+        configPath = value();
+        break;
       case "--fail-on": {
         const v = value();
         failOn = v === "none" ? "none" : parseSeverity(v, "--fail-on");
         break;
       }
       case "--min-severity":
-        options.minSeverity = parseSeverity(value(), "--min-severity");
+        minSeverity = parseSeverity(value(), "--min-severity");
         break;
       case "--disable":
-        options.disable = value()
+        disable = value()
           .split(",")
           .map((s) => s.trim().toUpperCase())
           .filter(Boolean);
+        break;
+      case "--ignore":
+        ignore.push(value());
+        break;
+      case "--no-code-frame":
+        codeFrame = false;
         break;
       case "--no-color":
         color = false;
@@ -99,29 +125,43 @@ function main(argv: string[]): void {
     }
   }
 
+  let config;
+  try {
+    config = loadConfig(configPath) ?? {};
+  } catch (e) {
+    if (e instanceof ConfigError) fail(e.message);
+    throw e;
+  }
+
+  const options: LintOptions = {
+    disable: disable ?? config.disable,
+    minSeverity: minSeverity ?? config.minSeverity,
+    ignore: [...(config.ignore ?? []), ...ignore],
+  };
+  const failLevel = failOn ?? config.failOn ?? "high";
   if (paths.length === 0) paths.push(".");
 
   let fileCount: number;
-  let findings;
+  let findings: Finding[];
   try {
-    fileCount = findCompactFiles(paths).length;
+    fileCount = listTargetFiles(paths, options.ignore).length;
     findings = lintFiles(paths, options);
   } catch (e) {
     fail((e as Error).message);
   }
 
-  const report =
-    format === "json" ? formatJson(findings) : format === "sarif" ? formatSarif(findings) : formatText(findings, fileCount, color && !output);
+  const text = (useColor: boolean) => formatText(findings, fileCount, { color: useColor, codeFrame });
+  const report = format === "json" ? formatJson(findings) : format === "sarif" ? formatSarif(findings) : text(color && !output);
 
   if (output) {
     writeFileSync(output, report + "\n");
-    if (format !== "text") process.stdout.write(formatText(findings, fileCount, color) + "\n");
+    process.stdout.write(text(color) + "\n");
   } else {
     process.stdout.write(report + "\n");
   }
 
-  if (failOn !== "none") {
-    const limit = SEVERITY_ORDER.indexOf(failOn);
+  if (failLevel !== "none") {
+    const limit = SEVERITY_ORDER.indexOf(failLevel);
     if (findings.some((f) => SEVERITY_ORDER.indexOf(f.severity) <= limit)) process.exitCode = 1;
   }
 }
