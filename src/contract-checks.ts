@@ -328,7 +328,7 @@ function shadowedLedger(program: Program, ctx: Ctx): RawFinding[] {
       severity: "low",
       confidence: "high",
       loc,
-      message: `The ${what} '${name}' has the same name as a ledger field, so inside this circuit '${name}' no longer refers to the ledger. A read or write meant for the ledger silently uses the local value. Rename it.`,
+      message: `The ${what} '${name}' has the same name as a ledger field, so inside this circuit '${name}' no longer refers to the ledger: a read meant for the ledger silently uses the local value instead. Rename it.`,
     });
   walk(program.decls, (d) => {
     if (d.kind !== "circuit" && d.kind !== "constructor") return;
@@ -419,7 +419,8 @@ function writeAfterWrite(program: Program, ctx: Ctx): RawFinding[] {
   return out;
 }
 
-const STDLIB_NAMES = new Set(["disclose", "pad", "persistentHash", "persistentCommit", "transientHash", "transientCommit", "assert", "default", "ownPublicKey", "merkleTreePathRoot", "some", "none", "left", "right", "kernel"]);
+// standard-library circuits that are not keywords (disclose, pad, assert, default, map, fold and slice are keywords and cannot be redeclared)
+const STDLIB_NAMES = new Set(["persistentHash", "persistentCommit", "transientHash", "transientCommit", "ownPublicKey", "merkleTreePathRoot", "merkleTreePathRootNoLeafHash", "some", "none", "left", "right", "degradeToTransient", "upgradeFromTransient", "tokenType", "nativeToken"]);
 
 /** MS026: a declaration hides a standard-library name (Slither shadowing-builtin). */
 function shadowedBuiltin(program: Program): RawFinding[] {

@@ -167,7 +167,7 @@ export circuit joinVoters(): [] {
   voters.insert(disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:voter:"), secretKey()])));
 }
 
-export circuit castVote(): [] {
+export circuit voteAnonymously(): [] {
   const n = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:voter:"), secretKey()]));
   assert(!voteNullifiers.member(n), "already voted");
   voteNullifiers.insert(n);
@@ -188,7 +188,7 @@ export circuit closeRound(): [] {
   if (false) {
     assert(round > 0, "no round");
   }
-  round = round + 1;
+  round = (round + 1) as Uint<32>;
 }
 
 // MS025: 'phase' is written twice; the first write has no effect.
@@ -197,9 +197,9 @@ export circuit advance(): [] {
   phase = 2;
 }
 
-// MS026: this parameter hides the standard-library disclose().
-export circuit echo(disclose: Uint<8>): Uint<8> {
-  return disclose;
+// MS026: this parameter hides the standard-library persistentHash().
+export circuit echo(persistentHash: Bytes<32>): Bytes<32> {
+  return disclose(persistentHash);
 }
 
 // MS027: the result of the membership check is thrown away.

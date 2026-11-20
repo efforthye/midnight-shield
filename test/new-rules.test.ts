@@ -278,7 +278,7 @@ describe("MS015–MS032", () => {
     ["MS023", `export circuit f(v: Uint<8>): [] { owner = disclose(persistentCommit<Uint<8>>(v, secretKey())); assert(true || false, "x"); }`, `export circuit f(v: Uint<8>): [] { assert(idOf(secretKey()) == owner, "x"); owner = disclose(persistentCommit<Uint<8>>(v, nonce())); }`],
     ["MS024", `export circuit f(): [] { if (true) { round = 1; } }`, `export circuit f(x: Boolean): [] { if (disclose(x)) { round = 1; } else { assert(false, "rejected"); } }`],
     ["MS025", `export circuit f(): [] { round = 1; round = 2; }`, `export circuit f(): [] { round = 1; round = round + 1; }`],
-    ["MS026", `export circuit f(pad: Field): Field { return pad; }`, `export circuit f(p: Field): Field { return p; }`],
+    ["MS026", `export circuit f(persistentHash: Field): Field { return disclose(persistentHash); }`, `export circuit f(p: Field): Field { return disclose(p); }`],
     ["MS027", `export circuit f(): [] { used.member(disclose(idOf(secretKey()))); }`, `export circuit f(): [] { assert(used.member(disclose(idOf(secretKey()))), "x"); }`],
     ["MS029", `export circuit f(r: Uint<32>): [] { disclose(r) == round; }`, `export circuit f(r: Uint<32>): [] { assert(disclose(r) == round, "x"); }`],
     ["MS031", `export circuit f(a: Field): [] { total = total + disclose(a); }`, `export circuit f(a: Field): [] { total = disclose(a); }`],
