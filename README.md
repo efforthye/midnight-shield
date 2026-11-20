@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🛡️ Midnight Shield
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/logo.svg" alt="" width="88">
+
+# Midnight Shield
 
 **Static analyzer for Midnight Compact contracts and the TypeScript code around them.**
 Catch security and privacy bugs before you deploy: in your terminal, your editor, your browser, CI, and AI coding agents.
@@ -71,7 +73,7 @@ npm install -g midnight-shield
 midnight-shield contracts/
 ```
 
-Not ready to install anything? Paste a contract into the **[web playground](#web-playground)**.
+Not ready to install anything? Scan your GitHub repository or paste a contract in the **[web playground](#web-playground)**.
 
 The repository has examples: [`examples/vulnerable.compact`](examples/vulnerable.compact) triggers every Compact rule, [`examples/dapp/vulnerable.ts`](examples/dapp/vulnerable.ts) every TypeScript rule, and the `safe` versions show the fixes (0 findings).
 
@@ -79,20 +81,33 @@ The repository has examples: [`examples/vulnerable.compact`](examples/vulnerable
 
 **[efforthye.github.io/midnight-shield](https://efforthye.github.io/midnight-shield/)**
 
-The full analyzer, compiled to run in the browser. Paste a Compact contract or DApp TypeScript and see findings as you type. Nothing is uploaded: there is no server, so private contract code stays on your machine.
+The full analyzer, compiled to run in the browser. Check your own project in three ways:
+
+| | How | What happens |
+| --- | --- | --- |
+| **Scan a GitHub repo** | Enter `github.com/owner/repo` (or a `…/tree/<branch>/<folder>` link) and press **Scan repo** | Your browser downloads the repository's `.compact` and DApp TypeScript files straight from GitHub and analyzes them together, with imports resolved |
+| **Open files or a folder** | **Open files**, **Open folder**, or drag and drop | Files are read locally. Nothing is uploaded |
+| **Paste code** | Type or paste into the editor | Findings update as you type |
+
+There is no server: the page is static, and your code stays in your browser. Public repositories only.
+
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-repo.png?v=2" alt="Scanning a whole repository in the playground" width="820">
 
 | Findings with fixes | Disclosure map |
 | --- | --- |
-| <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground.png" alt="Playground findings" width="400"> | <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-disclosures.png" alt="Playground disclosure map" width="400"> |
+| <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground.png?v=2" alt="Playground findings" width="400"> | <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-disclosures.png?v=2" alt="Playground disclosure map" width="400"> |
 
-- **Live analysis** of `.compact` and `.ts` code, with problem lines marked in the editor gutter
+- **Whole-project results** grouped by file. Click a finding to open that file at the line
 - **Disclosure map** tab: every value that becomes public, and whether it is raw, hashed or committed
-- **Examples** to start from: a vulnerable contract, its safe version, and vulnerable DApp code
-- **Share link**: the code is stored in the URL hash, so you can send a finding to a teammate or reviewer
+- **Share link**: a repository scan is shared as `…/#repo=owner/repo`, so anyone can rerun it; pasted code is stored in the link itself
 - **Download report** as Markdown for an audit note or a PR comment
-- Severity filter, light and dark themes, and a mobile layout
+- Examples, severity filter, light and dark themes, and a mobile layout
 
-<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-light.png" alt="Playground checking TypeScript DApp code in light theme" width="820">
+Link to a scan of your project from your own README:
+
+```markdown
+[![Scan with Midnight Shield](https://img.shields.io/badge/scan%20with-Midnight%20Shield-6d5ce7)](https://efforthye.github.io/midnight-shield/#repo=OWNER/REPO)
+```
 
 To run it locally: `npm run playground` builds a single file at `playground/dist/index.html` that you can open directly.
 
