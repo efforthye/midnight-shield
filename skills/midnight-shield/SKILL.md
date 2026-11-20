@@ -21,7 +21,9 @@ Run from the project root and read the JSON report:
 npx github:efforthye/midnight-shield <contracts-dir> --format json --fail-on none
 ```
 
-Each finding has `ruleId`, `severity`, `message`, `file`, `line`, `col`, `snippet`, and `docUrl`.
+Each finding has `ruleId`, `severity`, `confidence`, `message`, `file`, `line`, `col`, `snippet`, and `docUrl`. Treat `low` confidence findings as questions to check, not certain bugs.
+
+To see everything the contract makes public, run `--print disclosures`. Any `RAW` row is private data published as is: check that it is meant to be public.
 
 ## Step 2: Fix, most severe first
 
@@ -37,7 +39,10 @@ Work through findings in order: critical, high, medium, low, info. For each one,
 | MS007 `disclosed-secret` | Never disclose a secret key, seed, or password. Publish `persistentHash([pad(32, "<app>:id:"), sk])` instead. |
 | MS008 `missing-nullifier` | Derive a nullifier `persistentHash([pad(32, "<app>:<action>:"), sk])`, `assert(!used.member(n))`, then `used.insert(n)`. |
 | MS009 `unbound-merkle-path` | Add `assert(disclose(path.leaf == deriveLeaf(secretKey())), "...")` next to the `checkRoot` call. |
-| MS006 `missing-pragma` | Add `pragma language_version >= 0.28.0;` (or the version the project uses) at the top. |
+| MS010 `linkable-ledger-update` | Give each circuit's published identifier its own domain tag (and a per-action value if needed). |
+| MS101 `remote-proof-server` | Point the proof server at `http://localhost:6300` (or an env variable that defaults to it). |
+| MS102 `secret-in-log` | Remove the secret from the log call, or log a derived public value. |
+| MS006 `missing-pragma` | Run `--fix`, or add `pragma language_version >= 0.28.0;` at the top. |
 | MS000 `parse-error` | Not a bug in the contract. Tell the user the analyzer skipped that part. |
 
 Keep each fix minimal and keep the circuit's behavior the same. If a fix changes the contract's interface (new witness, new ledger field), say so to the user, because the TypeScript side must be updated too.
