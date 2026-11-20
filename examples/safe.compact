@@ -1,0 +1,37 @@
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+// The same features written safely. Midnight Shield reports nothing here.
+
+export ledger ownerId: Bytes<32>;
+export ledger committed: Bytes<32>;
+export ledger balance: Uint<64>;
+
+witness secretKey(): Bytes<32>;
+witness randomness(): Bytes<32>;
+witness myBalance(): Uint<64>;
+
+circuit deriveId(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:owner:"), sk]);
+}
+
+constructor() {
+  ownerId = disclose(deriveId(secretKey()));
+}
+
+// Authorize by proving knowledge of the secret behind the stored hash.
+export circuit withdraw(): [] {
+  assert(deriveId(secretKey()) == ownerId, "not the owner");
+}
+
+// Fresh 32-byte randomness from a witness hides the amount.
+export circuit commitAmount(amount: Uint<64>): [] {
+  committed = persistentCommit<Uint<64>>(amount, randomness());
+}
+
+// The witness value is checked before it becomes public.
+export circuit syncBalance(): [] {
+  const b = myBalance();
+  assert(b <= 1000000, "balance out of range");
+  balance = disclose(b);
+}
