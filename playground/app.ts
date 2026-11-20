@@ -11,6 +11,7 @@ import {
   type Finding,
   type DisclosureEntry,
   type RepoRef,
+  suggestionDiff,
 } from "../src/browser.js";
 import { EXAMPLES } from "./examples.generated.js";
 
@@ -112,13 +113,22 @@ function renderGutter(): void {
   gutter.scrollTop = code.scrollTop;
 }
 
+/** The suggested fix as a small diff, with a button that copies the fixed lines. */
+function fixBlock(f: Finding, i: number): string {
+  const diff = suggestionDiff(f.suggestion!);
+  const rows = diff.map((d) => `<div class="dl d${d.kind === "+" ? "add" : d.kind === "-" ? "del" : "ctx"}"><span class="dm">${d.kind}</span>${esc(d.text)}</div>`).join("");
+  return `<div class="fix"><div class="fixhead"><span>Suggested fix</span><button class="copyfix" data-i="${i}" type="button">Copy fix</button></div>
+    <div class="diff">${rows}</div>${f.suggestion!.note ? `<p class="fixnote">${esc(f.suggestion!.note)}</p>` : ""}</div>`;
+}
+
 function findingCard(f: Finding, i: number): string {
   return `<div class="finding" data-i="${i}">
     <div class="head"><span class="sev" style="color:${SEV_COLOR[f.severity]}">${f.severity.toUpperCase()}</span>
     <span class="rule">${f.ruleId} ${esc(f.ruleName)}</span><span class="loc">line ${f.line}:${f.col}</span>
     ${f.confidence !== "high" ? `<span class="conf">${f.confidence} confidence</span>` : ""}</div>
     <div class="msg">${esc(f.message)}</div>
-    ${f.snippet.trim() ? `<div class="snippet">${esc(f.snippet.trim())}</div>` : ""}
+    ${f.snippet.trim() && !f.suggestion ? `<div class="snippet">${esc(f.snippet.trim())}</div>` : ""}
+    ${f.suggestion ? fixBlock(f, i) : ""}
     <a href="${f.docUrl}" target="_blank" rel="noopener">How to fix →</a></div>`;
 }
 
@@ -210,6 +220,17 @@ function openFile(path: string, line?: number): void {
 panel.addEventListener("click", (e) => {
   const target = e.target as HTMLElement;
   if (target.closest("a")) return;
+  const copy = target.closest(".copyfix") as HTMLElement | null;
+  if (copy) {
+    const f = visible()[Number(copy.dataset.i)];
+    const text = suggestionDiff(f.suggestion!).filter((d) => d.kind !== "-").map((d) => d.text).join("\n");
+    void navigator.clipboard.writeText(text).then(
+      () => (copy.textContent = "Copied ✓"),
+      () => (copy.textContent = "Copy failed"),
+    );
+    setTimeout(() => (copy.textContent = "Copy fix"), 1500);
+    return;
+  }
   const head = target.closest(".filehead") as HTMLElement | null;
   if (head) return openFile(head.dataset.file!);
   const card = target.closest(".finding") as HTMLElement | null;

@@ -96,6 +96,18 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 12px; border-top: 1p
 .progress .bar { height: 4px; border-radius: 4px; background: var(--panel2); margin: 14px auto 0; max-width: 280px; overflow: hidden; }
 .progress .bar i { display: block; height: 100%; background: var(--accent); transition: width .2s; }
 .error { color: var(--high); }
+.fix { margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.fixhead { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--panel2); border-bottom: 1px solid var(--border); }
+.copyfix { font-size: 12px; padding: 2px 8px; }
+.diff { font: 12px/19px var(--mono); overflow-x: auto; padding: 6px 0; }
+.dl { white-space: pre; padding: 0 10px; }
+.dm { display: inline-block; width: 16px; color: var(--muted); user-select: none; }
+.dadd { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.dadd .dm { color: var(--ok); }
+.ddel { background: color-mix(in srgb, var(--high) 12%, transparent); }
+.ddel .dm { color: var(--high); }
+.dctx { color: var(--muted); }
+.fixnote { margin: 0; padding: 6px 10px 8px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
 /* scrollbars: thin, rounded, theme colored */
 * { scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -104,7 +116,7 @@ footer { padding: 8px 20px; color: var(--muted); font-size: 12px; border-top: 1p
 ::-webkit-scrollbar-thumb:hover { background: var(--scroll-hover); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 /* code must show exactly what is typed: no ligatures such as >= rendered as a single glyph */
-textarea, .gutter, .snippet, code { font-variant-ligatures: none !important; font-feature-settings: "liga" 0, "calt" 0 !important; }
+textarea, .gutter, .snippet, .diff, code { font-variant-ligatures: none !important; font-feature-settings: "liga" 0, "calt" 0 !important; }
 </style>
 </head>
 <body>
