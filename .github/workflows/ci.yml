@@ -47,6 +47,9 @@ jobs:
           echo "$HOME/compact" >> "$GITHUB_PATH"
           echo "$HOME/compact/bin" >> "$GITHUB_PATH"
       - name: Install the latest compiler
+        env:
+          # compact reads GITHUB_TOKEN; without it, shared runners hit GitHub's anonymous API rate limit
+          GITHUB_TOKEN: ${{ github.token }}
         run: compact update
       - name: Compile
         run: |
