@@ -14,6 +14,7 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 ![Tests](https://img.shields.io/badge/tests-125%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
+[![Scan with Midnight Shield](https://img.shields.io/badge/scan%20with-Midnight%20Shield-6d5ce7)](https://efforthye.github.io/midnight-shield/#repo=efforthye/midnight-shield)
 
 [Quick start](#quick-start) · [Web playground](#web-playground) · [Rules](#rules) · [Disclosure map](#disclosure-map) · [Editor](#vs-code) · [CI](#github-action) · [AI agents](#use-with-ai-coding-agents) · [Verification](#testing-and-verification)
 
