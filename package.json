@@ -1,6 +1,6 @@
 {
   "name": "midnight-shield",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Static analyzer for Midnight Compact contracts. Finds security and privacy issues before deploy.",
   "type": "module",
   "bin": {
@@ -11,6 +11,7 @@
   "files": [
     "dist/src",
     "docs",
+    "skills",
     "action.yml"
   ],
   "scripts": {
