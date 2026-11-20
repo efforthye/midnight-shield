@@ -8,11 +8,15 @@ export ledger committed: Bytes<32>;
 export ledger balance: Uint<64>;
 export ledger members: MerkleTree<10, Bytes<32>>;
 export ledger claimed: Set<Bytes<32>>;
+export ledger stateId: Bytes<32>;
+export ledger sealedBid: Bytes<32>;
+export ledger winningBid: Uint<64>;
 export ledger claims: Counter;
 
 witness secretKey(): Bytes<32>;
 witness randomness(): Bytes<32>;
 witness myBalance(): Uint<64>;
+witness bidRandomness(): Bytes<32>;
 witness memberPath(): MerkleTreePath<10, Bytes<32>>;
 
 circuit deriveId(sk: Bytes<32>): Bytes<32> {
@@ -61,4 +65,20 @@ export circuit claim(): [] {
   assert(!claimed.member(n), "already claimed");
   claimed.insert(n);
   claims.increment(1);
+}
+
+// Values kept in state use persistentHash, which stays the same across upgrades.
+export circuit cacheId(): [] {
+  stateId = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:cache:"), secretKey()]));
+}
+
+// Commit, then reveal: the reveal recomputes the commitment in the circuit,
+// so the randomness never becomes public.
+export circuit placeBid(amount: Uint<64>): [] {
+  sealedBid = disclose(persistentCommit<Uint<64>>(amount, bidRandomness()));
+}
+
+export circuit revealBid(amount: Uint<64>): [] {
+  assert(disclose(persistentCommit<Uint<64>>(amount, bidRandomness()) == sealedBid), "does not match the sealed bid");
+  winningBid = disclose(amount);
 }

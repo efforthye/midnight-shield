@@ -26,14 +26,14 @@ const BUILTINS = new Set([
 /** Ledger ADT methods that change state. */
 const WRITE_METHODS = new Set(["write", "insert", "insertDefault", "remove", "resetToDefault", "insertCoin", "increment", "decrement"]);
 
-interface Ctx {
+export interface Ctx {
   ledger: Set<string>;
   witnesses: Set<string>;
   circuits: Map<string, Circuit>;
   enums: Set<string>;
 }
 
-function collect(decls: Decl[], ctx: Ctx): void {
+export function collect(decls: Decl[], ctx: Ctx): void {
   for (const d of decls) {
     if (d.kind === "ledger") ctx.ledger.add(d.name);
     else if (d.kind === "witness") ctx.witnesses.add(d.name);
@@ -43,7 +43,7 @@ function collect(decls: Decl[], ctx: Ctx): void {
   }
 }
 
-function* exprs(e: Expr): Generator<Expr> {
+export function* exprs(e: Expr): Generator<Expr> {
   yield e;
   switch (e.kind) {
     case "call":
@@ -86,7 +86,7 @@ function* exprs(e: Expr): Generator<Expr> {
   }
 }
 
-function* stmtExprs(s: Stmt): Generator<Expr> {
+export function* stmtExprs(s: Stmt): Generator<Expr> {
   switch (s.kind) {
     case "const":
       yield* exprs(s.init);
@@ -116,7 +116,7 @@ function* stmtExprs(s: Stmt): Generator<Expr> {
   }
 }
 
-function* stmts(body: Stmt[]): Generator<Stmt> {
+export function* stmts(body: Stmt[]): Generator<Stmt> {
   for (const s of body) {
     yield s;
     if (s.kind === "if") {
@@ -148,6 +148,8 @@ const PASS_THROUGH = new Set(["disclose", "read", "lookup", "member", "size", "i
 function identityLike(e: Expr): boolean {
   for (const x of exprs(e)) {
     if (x.kind !== "call") continue;
+    // a commitment being opened (commit-reveal) is about data, not about who is calling
+    if (x.callee.kind === "ident" && (x.callee.name === "persistentCommit" || x.callee.name === "transientCommit")) return false;
     const name = x.callee.kind === "ident" ? x.callee.name : x.callee.kind === "member" ? x.callee.property : "";
     if (!PASS_THROUGH.has(name)) return true;
   }

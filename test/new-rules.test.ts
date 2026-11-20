@@ -123,3 +123,130 @@ describe("MS104 private-state-in-browser-storage", () => {
     assert.ok(!has(`if (localStorage.length == 0) {}`, "MS104", "a.ts"));
   });
 });
+
+const STATE = `${HEADER}
+export ledger stored: Bytes<32>;
+export ledger sealed: Bytes<32>;
+export ledger salt: Bytes<32>;
+witness secretKey(): Bytes<32>;
+witness isAdmin(): Boolean;
+witness approved(): Boolean;
+witness bidRandomness(): Bytes<32>;
+`;
+
+describe("MS012 transient-hash-in-state", () => {
+  it("flags a transient hash or commitment written to the ledger, also through a local", () => {
+    assert.ok(has(`${STATE}
+export circuit f(): [] {
+  stored = disclose(transientHash<Bytes<32>>(secretKey()));
+}`, "MS012"));
+    assert.ok(has(`${STATE}
+export circuit f(): [] {
+  const h = transientCommit<Bytes<32>>(secretKey(), bidRandomness());
+  stored = disclose(h);
+}`, "MS012"));
+  });
+
+  it("does not flag persistent hashes or transient ones used only in checks", () => {
+    assert.ok(!has(`${STATE}
+export circuit f(): [] {
+  stored = disclose(persistentHash<Bytes<32>>(secretKey()));
+}`, "MS012"));
+    assert.ok(!has(`${STATE}
+export circuit f(x: Bytes<32>): [] {
+  assert(transientHash<Bytes<32>>(x) == transientHash<Bytes<32>>(secretKey()), "bad");
+}`, "MS012"));
+  });
+});
+
+describe("MS013 witness-controlled-assert", () => {
+  it("flags an assert on a Boolean witness, negated, compared with a literal, or through a local", () => {
+    for (const cond of ["disclose(isAdmin())", "!disclose(isAdmin())", "disclose(isAdmin() == true)", "disclose(isAdmin() && approved())"]) {
+      assert.ok(has(`${STATE}
+export circuit f(): [] {
+  assert(${cond}, "no");
+}`, "MS013"), cond);
+    }
+    assert.ok(has(`${STATE}
+export circuit f(): [] {
+  const ok = isAdmin();
+  assert(disclose(ok), "no");
+}`, "MS013"));
+  });
+
+  it("does not flag asserts that also check something the contract trusts", () => {
+    assert.ok(!has(`${STATE}
+export circuit f(): [] {
+  assert(disclose(isAdmin() && persistentHash<Bytes<32>>(secretKey()) == stored), "no");
+}`, "MS013"));
+    assert.ok(!has(`${STATE}
+export circuit f(): [] {
+  assert(disclose(persistentHash<Bytes<32>>(secretKey()) == stored), "no");
+}`, "MS013"));
+  });
+});
+
+describe("MS014 commitment-randomness-disclosed", () => {
+  const COMMIT = `export circuit bid(v: Uint<64>): [] {
+  sealed = disclose(persistentCommit<Uint<64>>(v, bidRandomness()));
+}`;
+  it("flags commitment randomness made public", () => {
+    assert.ok(has(`${STATE}${COMMIT}
+export circuit leak(): [] {
+  salt = disclose(bidRandomness());
+}`, "MS014"));
+  });
+
+  it("does not flag opening the commitment in an assert, or witnesses not used as randomness", () => {
+    assert.ok(!has(`${STATE}${COMMIT}
+export circuit reveal(v: Uint<64>): [] {
+  const r = bidRandomness();
+  assert(disclose(persistentCommit<Uint<64>>(v, r) == sealed), "no match");
+  salt = disclose(r);
+}`, "MS014"));
+    assert.ok(!has(`${STATE}${COMMIT}
+export circuit pub(): [] {
+  stored = disclose(persistentHash<Bytes<32>>(secretKey()));
+}`, "MS014"));
+  });
+});
+
+describe("MS105 insecure-randomness", () => {
+  it("flags Math.random() used for secrets, nonces or salts", () => {
+    assert.ok(has(`const salt = Math.random().toString(16);`, "MS105", "a.ts"));
+    assert.ok(has(`const state = { secretKey: Math.random() * 1e18 };`, "MS105", "a.ts"));
+    assert.ok(has(`function newNonce() { return Math.floor(Math.random() * 2 ** 32); }`, "MS105", "a.ts"));
+  });
+
+  it("does not flag Math.random() for UI values", () => {
+    assert.ok(!has(`const delay = Math.random() * 1000;`, "MS105", "a.ts"));
+    assert.ok(!has(`const color = colors[Math.floor(Math.random() * colors.length)];`, "MS105", "a.ts"));
+    assert.ok(!has(`const salt = crypto.getRandomValues(new Uint8Array(32));`, "MS105", "a.ts"));
+  });
+});
+
+describe("MS106 secret-sent-over-network", () => {
+  it("flags a secret in a URL, a request body or a client call", () => {
+    assert.ok(has("await fetch(`https://x.com/save?seed=${seed}`);", "MS106", "a.ts"));
+    assert.ok(has(`await fetch(url, { body: JSON.stringify({ secretKey }) });`, "MS106", "a.ts"));
+    assert.ok(has(`await axios.post("/backup", { mnemonic });`, "MS106", "a.ts"));
+  });
+
+  it("does not flag values derived from a secret, or non-secret data", () => {
+    assert.ok(!has(`await fetch(url, { body: JSON.stringify({ publicKey: publicKeyOf(seed) }) });`, "MS106", "a.ts"));
+    assert.ok(!has(`await fetch(url, { body: JSON.stringify({ hash: hashSecret(secretKey) }) });`, "MS106", "a.ts"));
+    assert.ok(!has(`await fetch(url, { body: JSON.stringify({ address, amount }) });`, "MS106", "a.ts"));
+  });
+});
+
+describe("MS011 and commit-reveal", () => {
+  it("does not treat opening a commitment as a caller check", () => {
+    assert.ok(!has(`${STATE}
+export circuit bid(v: Uint<64>): [] {
+  sealed = disclose(persistentCommit<Uint<64>>(v, bidRandomness()));
+}
+export circuit reveal(v: Uint<64>): [] {
+  assert(disclose(persistentCommit<Uint<64>>(v, bidRandomness()) == sealed), "no match");
+}`, "MS011"));
+  });
+});

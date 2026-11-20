@@ -16,11 +16,16 @@ export ledger claims: Counter;
 export ledger claimed: Set<Bytes<32>>;
 export ledger posts: Set<Bytes<32>>;
 export ledger reactions: Set<Bytes<32>>;
+export ledger cachedId: Field;
+export ledger sealedBid: Bytes<32>;
+export ledger revealedSalt: Bytes<32>;
 
 witness secretKey(): Bytes<32>;
 witness myChoice(): Uint<8>;
 witness myBalance(): Uint<64>;
 witness memberPath(): MerkleTreePath<10, Bytes<32>>;
+witness isAdmin(): Boolean;
+witness bidRandomness(): Bytes<32>;
 
 // MS001: ownPublicKey() is chosen by the prover, so this check authorizes anyone.
 export circuit withdraw(): [] {
@@ -103,4 +108,24 @@ export circuit react(): [] {
   const tag = disclose(memberTag(sk));
   assert(!reactions.member(tag), "already reacted");
   reactions.insert(tag);
+}
+
+// MS012: transient hashes may change in a future upgrade, so this stored value can stop matching.
+export circuit cacheId(): [] {
+  cachedId = disclose(transientHash<Vector<2, Bytes<32>>>([pad(32, "example:cache:"), secretKey()]));
+}
+
+// MS013: isAdmin() is answered by the prover, so anyone can pass this check.
+export circuit adminReset(): [] {
+  assert(disclose(isAdmin()), "not an admin");
+  claims.resetToDefault();
+}
+
+// MS014: the bid is committed, but its randomness is published too, so anyone can open it.
+export circuit placeBid(amount: Uint<64>): [] {
+  sealedBid = disclose(persistentCommit<Uint<64>>(amount, bidRandomness()));
+}
+
+export circuit publishSalt(): [] {
+  revealedSalt = disclose(bidRandomness());
 }

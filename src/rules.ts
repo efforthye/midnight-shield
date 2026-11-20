@@ -111,6 +111,27 @@ export const RULES: RuleMeta[] = [
     summary: "An exported circuit changes a ledger field used to authorize callers (an owner key, an admin set) without checking who is calling, so anyone can take it over.",
   },
   {
+    id: "MS012",
+    name: "transient-hash-in-state",
+    severity: "medium",
+    confidence: "high",
+    summary: "A transientHash or transientCommit result is stored in the ledger, but transient hashes are not guaranteed to stay the same across upgrades.",
+  },
+  {
+    id: "MS013",
+    name: "witness-controlled-assert",
+    severity: "high",
+    confidence: "high",
+    summary: "An assert checks only a Boolean witness, which the prover chooses, so it enforces nothing.",
+  },
+  {
+    id: "MS014",
+    name: "commitment-randomness-disclosed",
+    severity: "high",
+    confidence: "medium",
+    summary: "The randomness of a commitment is made public, so anyone can open the commitment by trying candidate values.",
+  },
+  {
     id: "MS101",
     name: "remote-proof-server",
     severity: "critical",
@@ -137,6 +158,20 @@ export const RULES: RuleMeta[] = [
     severity: "high",
     confidence: "medium",
     summary: "TypeScript/JavaScript: private state or a secret is saved to localStorage or sessionStorage, unencrypted and readable by any script on the page.",
+  },
+  {
+    id: "MS105",
+    name: "insecure-randomness",
+    severity: "high",
+    confidence: "medium",
+    summary: "TypeScript/JavaScript: Math.random() is used to make a secret, seed, nonce, salt or commitment randomness.",
+  },
+  {
+    id: "MS106",
+    name: "secret-sent-over-network",
+    severity: "high",
+    confidence: "medium",
+    summary: "TypeScript/JavaScript: a secret key, seed or password is sent in a network request.",
   },
 ];
 

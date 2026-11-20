@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { lintFiles } from "../src/node.js";
 import { RULES } from "../src/rules.js";
 
-const SDK_RULES = ["MS101", "MS102", "MS103", "MS104"];
+const SDK_RULES = ["MS101", "MS102", "MS103", "MS104", "MS105", "MS106"];
 const NOT_IN_EXAMPLES = ["MS000", "MS006"];
 
 describe("bundled examples", () => {

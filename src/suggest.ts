@@ -196,6 +196,29 @@ export function suggestFix(ruleId: string, message: string, line: string): Sugge
         note: "Check the caller the same way the rest of the contract does before changing who is authorized.",
       };
     }
+    case "MS012": {
+      const after = line.replace(/\btransientHash\b/g, "persistentHash").replace(/\btransientCommit\b/g, "persistentCommit");
+      return after === line ? undefined : { before, after: [after], note: "persistentHash and persistentCommit stay the same across upgrades, so stored values keep matching." };
+    }
+    case "MS013": {
+      const c = callArgs(line, "assert");
+      if (!c) return undefined;
+      const rest = splitArgs(line.slice(c.open + 1, c.close)).slice(1);
+      const args = [`disclose(deriveId(secretKey()) == adminId)`, ...rest].join(", ");
+      return {
+        before,
+        after: [`${line.slice(0, c.open + 1)}${args}${line.slice(c.close)}`],
+        note: "Prove knowledge of a secret whose hash the contract stored (adminId) instead of trusting a yes/no from a witness.",
+      };
+    }
+    case "MS014": {
+      const w = (quoted(message) ?? "randomness()").replace(/\(\)$/, "");
+      return {
+        before,
+        after: [`${ind}assert(disclose(persistentCommit<Uint<64>>(value, ${w}()) == commitment), "does not open the commitment");`],
+        note: `Open the commitment inside the circuit, so ${w}() is used but never published. Use your commitment's value type and ledger field.`,
+      };
+    }
     case "MS101": {
       const after = line.replace(/(["'])(?:https?|wss?):\/\/[^"']*\1/, 'process.env.MIDNIGHT_PROOF_SERVER ?? "http://localhost:6300"');
       return after === line ? undefined : { before, after: [after], note: "Run the proof server on the user's own machine." };
@@ -213,6 +236,18 @@ export function suggestFix(ruleId: string, message: string, line: string): Sugge
       const env = name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase();
       const after = line.replace(/(["'])[^"']{20,}\1/, `process.env.${env} ?? ""`);
       return after === line ? undefined : { before, after: [after], note: "Then treat the exposed key as leaked: move its funds and stop using it." };
+    }
+    case "MS105": {
+      const after = line.replace(/Math\.random\(\)(\s*\.\s*\w+\([^()]*\))*/, 'Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex")');
+      return after === line ? undefined : { before, after: [after], note: "crypto.getRandomValues works in browsers and Node.js 19+; in older Node.js use crypto.randomBytes(32)." };
+    }
+    case "MS106": {
+      const name = quoted(message) ?? "seed";
+      const interp = new RegExp(`\\$\\{${name}\\}`, "g");
+      const after = interp.test(line)
+        ? line.replace(interp, `\${publicKeyOf(${name})}`)
+        : line.replace(new RegExp(`([({,]\\s*)${name}(\\s*[,})])`), `$1publicKey: publicKeyOf(${name})$2`).replace(new RegExp(`(:\\s*)${name}\\b(?!\\s*\\()`), `$1publicKeyOf(${name})`);
+      return after === line ? undefined : { before, after: [after], note: "Send something derived from the secret (a public key or a hash), never the secret. If you need a backup, encrypt it on the device first." };
     }
     case "MS104":
       return {

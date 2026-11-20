@@ -120,7 +120,7 @@ export function lintSdkSource(source: string): RawFinding[] {
       }
     }
   }
-  out.push(...hardcodedSecrets(tokens), ...browserStorage(tokens));
+  out.push(...hardcodedSecrets(tokens), ...browserStorage(tokens), ...insecureRandomness(tokens), ...secretsOverNetwork(tokens));
   return out;
 }
 
@@ -200,6 +200,134 @@ function browserStorage(tokens: Token[]): RawFinding[] {
       confidence: "medium",
       loc: { line: t.line, col: t.col },
       message: `Private data ('${hit.kind === "string" ? hit.value.slice(1, -1) : hit.value}') is saved to ${t.value}, which stores it unencrypted and lets any script on the page read it (an extension, an injected script, a compromised dependency). Keep private state in the Midnight private state provider, or encrypt it with a key the user controls.`,
+    });
+  }
+  return out;
+}
+
+/** Names of values that must be unpredictable: secrets, plus nonces, salts and randomness. */
+const isRandomnessName = (name: string) => isSecretName(name) || /(nonce|salt|rand(om)?(ness)?|blind|entropy|coin)(?![a-z])/i.test(name.replace(/([a-z0-9])([A-Z])/g, "$1_$2"));
+
+/** The tokens of the statement around index i: back to the previous `;`, or a `{`/`}` outside any parentheses. */
+function statementAround(tokens: Token[], i: number): Token[] {
+  let start = i;
+  let paren = 0; // < 0 while inside the arguments of an enclosing call
+  let brace = 0; // > 0 while inside an object literal or block that closes before i
+  for (let j = i - 1; j >= 0; j--) {
+    const v = tokens[j].value;
+    if (v === ")" || v === "]") paren++;
+    else if (v === "(" || v === "[") paren--;
+    else if (v === "}") {
+      if (paren >= 0 && brace === 0) break;
+      brace++;
+    } else if (v === "{") {
+      if (brace === 0) break;
+      brace--;
+    } else if (v === ";" && paren >= 0 && brace === 0) break;
+    start = j;
+  }
+  return tokens.slice(start, i + 1);
+}
+
+/** MS105: Math.random() used to make a secret, seed, key, nonce, salt or commitment randomness. */
+function insecureRandomness(tokens: Token[]): RawFinding[] {
+  const out: RawFinding[] = [];
+  for (let i = 0; i + 3 < tokens.length; i++) {
+    if (tokens[i].value !== "Math" || tokens[i + 1].value !== "." || tokens[i + 2].value !== "random" || tokens[i + 3].value !== "(") continue;
+    const stmt = statementAround(tokens, i);
+    // the name being assigned: `name = …`, `name: …`, or the function the value is returned from
+    let target: string | undefined;
+    const names: string[] = [];
+    for (let k = 0; k + 1 < stmt.length; k++) {
+      const next = stmt[k + 1].value;
+      if (stmt[k].kind === "ident" && (next === "=" || next === ":") && stmt[k + 2]?.value !== "=" && stmt[k + 2]?.value !== ">") names.push(stmt[k].value);
+    }
+    if (names.length) target = names.find(isRandomnessName) ?? names[0];
+    if (!target) {
+      // `return …Math.random()…` inside a function with a telling name
+      for (let j = i - 1; j >= 0 && j >= i - 200; j--) {
+        if (tokens[j].value === "function" && tokens[j + 1]?.kind === "ident") {
+          target = tokens[j + 1].value;
+          break;
+        }
+      }
+    }
+    if (!target || !isRandomnessName(target)) continue;
+    out.push({
+      ruleId: "MS105",
+      severity: "high",
+      confidence: "medium",
+      loc: { line: tokens[i].line, col: tokens[i].col },
+      message: `'${target}' is made with Math.random(), which is not cryptographically secure: its output can be predicted from earlier values. Secrets, seeds, nonces and commitment randomness need crypto.getRandomValues() (browser) or crypto.randomBytes() (Node.js).`,
+    });
+  }
+  return out;
+}
+
+const PASS_THROUGH_FNS = new Set(["stringify", "encodeURIComponent", "encodeURI", "String", "from", "toString", "btoa", "toHex", "toBase64"]);
+const NETWORK_CALLS = new Set(["fetch", "axios", "request", "got", "ky", "XMLHttpRequest"]);
+const NETWORK_METHODS = new Set(["get", "post", "put", "patch", "delete", "request", "open", "send", "sendBeacon"]);
+
+/** MS106: a secret key, seed or password sent in a network request (URL, query or body). */
+function secretsOverNetwork(tokens: Token[]): RawFinding[] {
+  const out: RawFinding[] = [];
+  for (let i = 0; i + 1 < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.kind !== "ident") continue;
+    let open = -1;
+    let what = "";
+    if (NETWORK_CALLS.has(t.value) && tokens[i + 1].value === "(" && tokens[i - 1]?.value !== ".") {
+      open = i + 1;
+      what = `${t.value}()`;
+    } else if (
+      (NETWORK_CALLS.has(t.value) || ["http", "https", "navigator", "xhr", "client", "api"].includes(t.value)) &&
+      tokens[i + 1].value === "." &&
+      NETWORK_METHODS.has(tokens[i + 2]?.value ?? "") &&
+      tokens[i + 3]?.value === "("
+    ) {
+      open = i + 3;
+      what = `${t.value}.${tokens[i + 2].value}()`;
+    }
+    if (open === -1) continue;
+    const args: Token[] = [];
+    for (let j = open, depth = 0; j < tokens.length; j++) {
+      const v = tokens[j].value;
+      if (v === "(" || v === "[" || v === "{") depth++;
+      else if ((v === ")" || v === "]" || v === "}") && --depth === 0) break;
+      if (j === open) continue;
+      if (tokens[j].kind === "string") args.push(...templateExpressionTokens(tokens[j]));
+      else args.push(tokens[j]);
+    }
+    // a secret passed through another function first (publicKeyOf(seed)) is a derived value,
+    // except functions that only encode it (JSON.stringify, encodeURIComponent, …)
+    const derivedDepth: number[] = [];
+    let derived = 0;
+    const secret = args.find((a, k) => {
+      if (a.value === "(") {
+        const fn = args[k - 1];
+        const encodes = fn?.kind === "ident" && PASS_THROUGH_FNS.has(fn.value);
+        const isCall = fn?.kind === "ident" || fn?.value === ")";
+        derivedDepth.push(isCall && !encodes ? 1 : 0);
+        derived += derivedDepth[derivedDepth.length - 1];
+        return false;
+      }
+      if (a.value === ")") {
+        derived -= derivedDepth.pop() ?? 0;
+        return false;
+      }
+      if (derived > 0 || a.kind !== "ident" || !isSecretName(a.value)) return false;
+      const next = args[k + 1]?.value;
+      if (next === "(") return false; // a function such as hashSecret(...)
+      if (next === "." && SAFE_PROPERTIES.has(args[k + 2]?.value ?? "")) return false;
+      return true;
+    });
+    if (!secret) continue;
+    out.push({
+      ruleId: "MS106",
+      severity: "high",
+      confidence: "medium",
+      loc: { line: t.line, col: t.col },
+      message: `'${secret.value}' looks like a secret and is sent in a network request (${what}). Whoever runs or logs that server, proxy or analytics endpoint can read it. Keep secrets on the user's device; send a public key, a signature or a hash instead.`,
     });
   }
   return out;

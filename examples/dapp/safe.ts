@@ -20,3 +20,13 @@ export const walletConfig = {
 export function saveTheme(theme: string): void {
   localStorage.setItem("theme", theme);
 }
+
+// Commitment randomness from a cryptographically secure source.
+export function newBidRandomness(): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(32));
+}
+
+// Only a public value leaves the device.
+export async function registerWallet(seed: string): Promise<void> {
+  await fetch("https://api.example.com/register", { method: "POST", body: JSON.stringify({ publicKey: publicKeyOf(seed) }) });
+}

@@ -6,6 +6,7 @@ import { parse } from "./parser.js";
 import { runCustomRule, type CustomRule } from "./plugins.js";
 import { isSdkFile, isTestFile, lintSdkSource } from "./sdk.js";
 import { checkAuthWrites } from "./auth-writes.js";
+import { checkStructural } from "./structural.js";
 import { suggestFix, type Suggestion } from "./suggest.js";
 import { CONFIDENCE_ORDER, RULES_BY_ID, SEVERITY_ORDER, ruleDocUrl, type Confidence, type RuleMeta, type Severity } from "./rules.js";
 
@@ -125,7 +126,7 @@ function analyze(source: string, file: string, options: LintOptions): Analysis {
   const program = parse(source);
   const analyzer = new Analyzer(program, options.resolver, options.absolutePath);
   const raw = analyzer.run();
-  raw.push(...checkAuthWrites(program));
+  raw.push(...checkAuthWrites(program), ...checkStructural(program));
   for (const rule of options.plugins ?? []) raw.push(...runCustomRule(rule, file, source, program));
   return { program, analyzer, raw };
 }
