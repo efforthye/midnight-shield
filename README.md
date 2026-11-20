@@ -15,7 +15,7 @@ The Compact compiler already rejects undeclared disclosure of witness data. But 
 - A commitment salt is reused, so users can be linked across transactions.
 - A witness is used without any constraint, so the prover can return anything.
 
-Other ecosystems have linters for this (Slither for Solidity, aztec-lint for Noir). Midnight Shield aims to fill that gap for Midnight, with a focus on privacy rules that are specific to Midnight.
+Midnight Shield is to Midnight what Slither is to Solidity and aztec-lint is to Noir: a static analyzer that catches issues before deploy, with rules built around Midnight’s privacy model.
 
 ## Features
 
