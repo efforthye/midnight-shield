@@ -57,6 +57,43 @@ jobs:
             echo "::endgroup::"
           done
 
+  # The web playground and the VS Code extension must build.
+  build-extras:
+    name: Playground and VS Code extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run playground
+      - name: VS Code extension
+        working-directory: vscode
+        run: |
+          npm install --no-audit --no-fund
+          npx tsc -p tsconfig.json
+          npm run build
+
+  # Checks the npm package contents and that the installed CLI runs.
+  package:
+    name: npm package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm pack
+      - name: Install the tarball and run it
+        run: |
+          mkdir /tmp/try && cd /tmp/try && npm init -y >/dev/null
+          npm install "$GITHUB_WORKSPACE"/midnight-shield-*.tgz
+          npx midnight-shield --version
+          npx midnight-shield explain MS001 > /dev/null
+          npx midnight-shield "$GITHUB_WORKSPACE/examples/safe.compact"
+
   # Runs the action from this repo on the example contracts, as a smoke test.
   # examples/vulnerable.compact is meant to produce findings, so it never fails the build.
   self-scan:
