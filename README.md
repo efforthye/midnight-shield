@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/logo.svg" alt="" width="88">
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/logo.svg?v=3" alt="" width="88">
 
 # Midnight Shield
 
@@ -11,7 +11,7 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
 ![Rules](https://img.shields.io/badge/rules-12-purple)
-![Tests](https://img.shields.io/badge/tests-120%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-125%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
 
@@ -91,11 +91,11 @@ The full analyzer, compiled to run in the browser. Check your own project in thr
 
 There is no server: the page is static, and your code stays in your browser. Public repositories only.
 
-<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-repo.png?v=2" alt="Scanning a whole repository in the playground" width="820">
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-repo.png?v=3" alt="Scanning a whole repository in the playground" width="820">
 
 | Findings with fixes | Disclosure map |
 | --- | --- |
-| <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground.png?v=2" alt="Playground findings" width="400"> | <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-disclosures.png?v=2" alt="Playground disclosure map" width="400"> |
+| <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground.png?v=3" alt="Playground findings" width="400"> | <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-disclosures.png?v=3" alt="Playground disclosure map" width="400"> |
 
 - **Whole-project results** grouped by file. Click a finding to open that file at the line
 - **Disclosure map** tab: every value that becomes public, and whether it is raw, hashed or committed
