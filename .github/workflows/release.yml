@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write
   id-token: write # npm Trusted Publishing and provenance
+  packages: write # GitHub Packages
 
 jobs:
   publish:
@@ -28,6 +29,16 @@ jobs:
       - name: Check the tag matches package.json
         run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
       - run: npm publish --access public # provenance is added automatically
+      # Also list the package on the repository page (GitHub Packages needs a scoped name).
+      - name: Publish to GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          echo "//npm.pkg.github.com/:_authToken=\${NODE_AUTH_TOKEN}" >> "$NPM_CONFIG_USERCONFIG"
+          npm pkg set name=@efforthye/midnight-shield
+          npm pkg delete publishConfig.provenance # GitHub Packages has no provenance
+          npm publish --registry https://npm.pkg.github.com --provenance=false --ignore-scripts
+          git checkout package.json
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
