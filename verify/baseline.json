@@ -1,7 +1,7 @@
 {
   "midnight-examples": {
     "commit": "df56a534caa58b50f8fb738312be84abfe7108de",
-    "files": 37,
+    "files": 679,
     "findings": {
       "MS005": 6,
       "MS006": 1
@@ -9,7 +9,7 @@
   },
   "compact-contracts": {
     "commit": "f85f1a23685c6bbedfc8c2589ae3aa128aff7c46",
-    "files": 109,
+    "files": 373,
     "findings": {
       "MS005": 5
     }
