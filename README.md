@@ -443,7 +443,7 @@ Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` 
 
 The cases are written by the author and are not an independent audit; their value is the list of what each rule catches and misses. The per-rule table and the known misses are in [bench/RESULTS.md](bench/RESULTS.md), and new cases (especially ones that break a rule) are welcome. Each rule's page also has a **Known limits** section.
 
-**Found in a public project.** Scanning [MeshJS/midnight-contracts-wizard](https://github.com/MeshJS/midnight-contracts-wizard) (contract templates that developers copy, commit `a1f868d`) found access checks that a caller can bypass. Each was checked by hand against the source:
+**Found in a public project.** Scanning [MeshJS/midnight-contracts-wizard](https://github.com/MeshJS/midnight-contracts-wizard) (contract templates that developers copy, commit `a1f868d`) found access checks that a caller can bypass. Each was checked by hand against the source. [▶ See the scan in the playground](https://efforthye.github.io/midnight-shield/#repo=MeshJS/midnight-contracts-wizard/tree/a1f868d/packages/contract/src) (also under **Examples… → Real projects**).
 
 | Contract | Rule | What a caller can do |
 | --- | --- | --- |

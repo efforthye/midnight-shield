@@ -62,6 +62,22 @@ for (const ex of EXAMPLES) {
   exampleSelect.appendChild(o);
 }
 
+// Real projects, scanned straight from GitHub at a pinned commit
+const REAL_PROJECTS = [
+  { name: "repo:meshjs", label: "MeshJS contracts wizard", url: "github.com/MeshJS/midnight-contracts-wizard/tree/a1f868d/packages/contract/src" },
+];
+{
+  const group = document.createElement("optgroup");
+  group.label = "Real projects";
+  for (const r of REAL_PROJECTS) {
+    const o = document.createElement("option");
+    o.value = r.name;
+    o.textContent = r.label;
+    group.appendChild(o);
+  }
+  exampleSelect.appendChild(group);
+}
+
 // ---------------------------------------------------------------- analysis
 
 function analyze(): void {
@@ -414,6 +430,14 @@ minSeverity.addEventListener("change", () => {
   render();
 });
 exampleSelect.addEventListener("change", () => {
+  const realProject = REAL_PROJECTS.find((x) => x.name === exampleSelect.value);
+  if (realProject) {
+    exampleSelect.value = "";
+    repoUrl.value = realProject.url;
+    const ref = parseRepoUrl(realProject.url);
+    if (ref) void scanRepo(ref);
+    return;
+  }
   const ex = EXAMPLES.find((x) => x.name === exampleSelect.value);
   if (!ex) return;
   project = null;

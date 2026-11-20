@@ -4,7 +4,7 @@ import { build } from "esbuild";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const examples = [
-  { name: "vulnerable", label: "Vulnerable contract (all Compact rules)", lang: "compact", file: "examples/vulnerable.compact" },
+  { name: "vulnerable", label: "Vulnerable contract", lang: "compact", file: "examples/vulnerable.compact" },
   { name: "safe", label: "Safe contract (no findings)", lang: "compact", file: "examples/safe.compact" },
   { name: "dapp", label: "Vulnerable DApp code (TypeScript)", lang: "ts", file: "examples/dapp/vulnerable.ts" },
 ].map((e) => ({ ...e, source: readFileSync(e.file, "utf8") }));
