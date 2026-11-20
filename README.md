@@ -14,7 +14,6 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 ![Tests](https://img.shields.io/badge/tests-148%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
-[![Playground](https://img.shields.io/badge/playground-try%20in%20your%20browser-6d5ce7)](https://efforthye.github.io/midnight-shield/)
 
 [Quick start](#quick-start) · [Web playground](#web-playground) · [Rules](#rules) · [Disclosure map](#disclosure-map) · [Editor](#vs-code) · [CI](#github-action) · [AI agents](#use-with-ai-coding-agents) · [Verification](#testing-and-verification) · [Pitch deck](#presentation)
 
@@ -110,7 +109,7 @@ There is no server: the page is static, and your code stays in your browser. Pub
 - **Download report** as Markdown for an audit note or a PR comment
 - Examples, severity filter, light and dark themes, and a mobile layout
 
-Show your project's status in its README with a badge that updates on every push (set up in the [GitHub Action](#status-badge)). It looks like ![no issues](https://img.shields.io/badge/midnight%20shield-no%20issues-brightgreen?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=) or ![2 high](https://img.shields.io/badge/midnight%20shield-2%20high-red?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=) and opens the scan in the playground when clicked.
+Show your project's status in its README with a badge that updates on every push (set up in the [GitHub Action](#status-badge)). It looks like ![verified](https://img.shields.io/badge/midnight%20shield-verified-brightgreen?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=) or ![2 high](https://img.shields.io/badge/midnight%20shield-2%20high-red?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=) and opens the scan in the playground when clicked.
 
 To run it locally: `npm run playground` builds a single file at `playground/dist/index.html` that you can open directly.
 
@@ -332,7 +331,7 @@ With `badge: true`, each push to the default branch writes the result to a `midn
 [![Midnight Shield](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/OWNER/REPO/midnight-shield-badge/badge.json)](https://efforthye.github.io/midnight-shield/#repo=OWNER/REPO)
 ```
 
-It shows ![no issues](https://img.shields.io/badge/midnight%20shield-no%20issues-brightgreen?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=) when the scan is clean, or the count of the most severe findings, such as ![2 high](https://img.shields.io/badge/midnight%20shield-2%20high-red?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=), colored by severity. `--badge badge.json` writes the same file from the CLI.
+It shows ![verified](https://img.shields.io/badge/midnight%20shield-verified-brightgreen?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=) when the scan is clean. Otherwise it shows the number of the most severe findings: red for critical or high, such as ![2 high](https://img.shields.io/badge/midnight%20shield-2%20high-red?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=), orange for medium, such as ![1 medium](https://img.shields.io/badge/midnight%20shield-1%20medium-orange?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=), and yellow for low, such as ![3 low](https://img.shields.io/badge/midnight%20shield-3%20low-yellow?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=). "Verified" means the code passes every Midnight Shield check, not that it was audited. `--badge badge.json` writes the same file from the CLI.
 
 | Input | Default | Description |
 | --- | --- | --- |
@@ -386,25 +385,17 @@ Other:      --list-rules  -v, --version  -h, --help
 
 Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` usage or config error.
 
-## How it compares
+## Where it fits
 
-| | Compact compiler | [Night Check](https://github.com/CjDabrow/night-check) | **Midnight Shield** |
-| --- | --- | --- | --- |
-| Blocks undeclared witness disclosure | ✅ | | (left to the compiler) |
-| Analysis method | Type checker | Line-by-line patterns | Syntax tree + data flow |
-| Follows values across helper circuits and imports | | | ✅ |
-| Entropy-aware hash and commitment checks | | | ✅ |
-| Disclosure map | | | ✅ |
-| TypeScript/DApp checks | | ✅ | ✅ |
-| Severity + confidence | | Severity | ✅ |
-| Suggested fixes for each finding | | | ✅ |
-| Privacy diff on pull requests | | | ✅ |
-| Baselines, suppressions, config | | | ✅ |
-| CLI · GitHub Action + SARIF · VS Code | ✅ · · | Demo script | ✅ · ✅ · ✅ |
-| Status badge that updates on every push | | | ✅ |
-| Web UI | | ✅ (with on-chain review receipt) | ✅ (local only) |
-| AI agent skill · plugin API | | | ✅ · ✅ |
-| Verified against real Midnight code in CI | n/a | | ✅ |
+Midnight Shield works alongside the tools you already use. Each does a different job:
+
+| Tool | What it does | Use it for |
+| --- | --- | --- |
+| Compact compiler | Checks types and makes every disclosure of private data explicit | Writing correct contracts. Always required |
+| [Night Check](https://github.com/CjDabrow/night-check) | Fast pattern checks for Compact and DApp code, with a web UI that records reviews on chain | Quick checks and a public record of a review |
+| **Midnight Shield** | Data-flow analysis built around Midnight's privacy model: the disclosure map, entropy-aware hash checks, suggested fixes and a privacy diff on pull requests | Catching privacy and security bugs before deploy, in your editor, in CI and with AI agents |
+
+On other chains, the same role is played by [Slither](https://github.com/crytic/slither) for Solidity and aztec-lint for Noir.
 
 ## Testing and verification
 
