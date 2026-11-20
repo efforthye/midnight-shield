@@ -10,8 +10,8 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 [![CI](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
-![Rules](https://img.shields.io/badge/rules-51-purple)
-![Tests](https://img.shields.io/badge/tests-310%20passing-brightgreen)
+![Rules](https://img.shields.io/badge/rules-53-purple)
+![Tests](https://img.shields.io/badge/tests-355%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
 
@@ -56,6 +56,7 @@ The Compact compiler already stops you from disclosing witness data by accident.
 | Unguarded `sendShielded` or mint | Anyone can drain the contract or mint tokens | [MS019](docs/rules/MS019.md), [MS020](docs/rules/MS020.md) |
 | Witness implemented as `new Uint8Array(32)` | The contract's "randomness" is all zeros | [MS113](docs/rules/MS113.md) |
 | Seed in a `VITE_` variable | The bundler ships it to every visitor | [MS119](docs/rules/MS119.md) |
+| [MS120](docs/rules/MS120.md) | `secret-from-public-data` | 🔴 High | medium | A secret computed only from public values such as an address or a public key, so anyone can recompute it |
 
 Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint** is to Noir: a static analyzer that catches issues before deploy, with rules built around Midnight's privacy model.
 
@@ -250,8 +251,11 @@ npx midnight-shield contracts/ --format json                    # scripts and AI
 | [MS030](docs/rules/MS030.md) | `bidi-control-character` | 🔴 High | high | An invisible text-direction character can make code read differently from how it runs (Trojan Source) |
 | [MS031](docs/rules/MS031.md) | `field-arithmetic-overflow` | 🔴 High | medium | Arithmetic on a Field ledger value wraps around silently instead of failing |
 | [MS032](docs/rules/MS032.md) | `unused-local` | ⚪ Info | high | A local constant is computed but never used |
+| [MS033](docs/rules/MS033.md) | `unsupported-language-version` | 🔵 Low | high | The pragma asks for a Compact version outside the tested range, so new syntax may be misread |
 
 **DApp code (TypeScript / JavaScript)**
+
+Secrets are recognized by name (`seed`, `secretKey`, `mnemonic`, …) and by where the value comes from: a variable assigned from `privateState.secretKey`, from a seed or mnemonic generator, or re-encoded from another secret counts as a secret whatever it is called.
 
 | ID | Name | Severity | Confidence | Finds |
 | --- | --- | --- | --- | --- |
@@ -435,13 +439,39 @@ Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` 
 
 ## Accuracy
 
-**Benchmark.** 123 labeled files: 74 expected findings reported, 3 missed, 0 false positives. Overall:
+**Benchmark.** 164 labeled files: 111 expected findings reported, 3 missed, 0 false positives. The cases are the plain vulnerable pattern for each rule, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
+
+| Rule | Expected findings | Found | Missed | False positives | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| MS001 | 5 | 5 | 0 | 0 | 100% | 100% |
+| MS002 | 4 | 4 | 0 | 0 | 100% | 100% |
+| MS003 | 5 | 5 | 0 | 0 | 100% | 100% |
+| MS004 | 4 | 4 | 0 | 0 | 100% | 100% |
+| MS007 | 7 | 6 | 1 | 0 | 100% | 86% |
+| MS008 | 5 | 5 | 0 | 0 | 100% | 100% |
+| MS009 | 6 | 6 | 0 | 0 | 100% | 100% |
+| MS011 | 5 | 4 | 1 | 0 | 100% | 80% |
+| MS013 | 10 | 10 | 0 | 0 | 100% | 100% |
+| MS014 | 3 | 3 | 0 | 0 | 100% | 100% |
+
+All rules together:
 
 | Rule | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| **All** | **74** | **3** | **0** | **100%** | **96%** |
+| **All** | **111** | **3** | **0** | **100%** | **97%** |
 
-The cases are written by the author and are not an independent audit; their value is the list of what each rule catches and misses. The per-rule table and the known misses are in [bench/RESULTS.md](bench/RESULTS.md), and new cases (especially ones that break a rule) are welcome. Each rule's page also has a **Known limits** section.
+The cases are written by the author, so treat the numbers as a regression check and an honest list of known misses, not an independent audit. While adding cases, a few results first looked like false positives; on review the finding was right and the label was wrong (for example, circuit parameters are private in Compact, so a hashed 8-bit parameter can be brute-forced). Each such case says why in a `// note:` line. CI also compiles every Compact case with the real Compact compiler and lists any that do not compile in the job summary. The per-rule table and the known misses are in [bench/RESULTS.md](bench/RESULTS.md), and each rule's page has a **Known limits** section.
+
+**Real-world reproductions.** Minimal versions of bugs found in public projects are part of the benchmark ([bench/known](bench/known)):
+
+| Case | Rules | Result | Source |
+| --- | --- | --- | --- |
+| `dividend-claim-unbound-path.compact` | MS009 | found | report pending |
+| `meshjs-lending-borrow.compact` | MS008, MS009, MS013 | found | [link](https://github.com/MeshJS/midnight-contracts-wizard/issues/1) |
+| `meshjs-oracle-submit.compact` | MS008, MS009, MS013 | found | [link](https://github.com/MeshJS/midnight-contracts-wizard/issues/1) |
+| `official-leaderboard-storage.ts` | MS104 | found | [link](https://github.com/midnightntwrk/midnight-examples) |
+| `role-key-from-public-key.ts` | MS120 | found | report pending |
+| `secret-key-as-map-key.compact` | MS007 | found | report pending |
 
 **Found in a public project.** Scanning [MeshJS/midnight-contracts-wizard](https://github.com/MeshJS/midnight-contracts-wizard) (contract templates that developers copy, commit `a1f868d`) found access checks that a caller can bypass. Each was checked by hand against the source. [▶ See the scan in the playground](https://efforthye.github.io/midnight-shield/#repo=MeshJS/midnight-contracts-wizard/tree/a1f868d/packages/contract/src) (also under **Examples… → Real projects**). Reported to the maintainers in [MeshJS/midnight-contracts-wizard#1](https://github.com/MeshJS/midnight-contracts-wizard/issues/1).
 
@@ -464,6 +494,14 @@ The same scan also showed false positives, which led to fixes: a secret passed t
 | MS019 | OpenZeppelin `MockUnshieldedTreasury` | A test mock that sends without checks on purpose |
 
 Building the newer rules also turned up a parser bug (`default<T> as U`) that the corpus run now covers.
+
+## Supported Compact versions
+
+Midnight Shield has its own parser, tested with **Compact language 0.16–0.28**: the official examples, OpenZeppelin Contracts for Compact and the benchmark. It does not need the compiler installed.
+
+- A file whose `pragma language_version` only allows versions outside that range gets **MS033**, and the CLI prints a warning.
+- A part of a file the parser cannot read is reported as **MS000** with its location, skipped, and also counted in that warning, so a clean result is never silently partial.
+- The CI corpus run fails on any parse error in 1,052 real files, so grammar drift shows up there first.
 
 ## Coverage compared with other analyzers
 
@@ -488,7 +526,7 @@ Rules were checked against the detector lists of [Slither](https://github.com/cr
 | Unconstrained private inputs | under-constrained signals (Circomspect) | MS002, MS009 |
 | Compiler version | `solc-version`, `pragma` | MS006 |
 
-Detectors for things Compact does not have (reentrancy, `delegatecall`, gas, inline assembly, inheritance, ERC interfaces, events) have no counterpart. On top of the shared bug classes, about half of the rules cover Midnight's privacy model, which the other tools do not deal with: disclosure of secrets (MS003, MS007, MS014, MS021, MS023), nullifiers (MS008, MS018), Merkle membership (MS009, MS010), transient hashes (MS012), and the DApp side where witnesses and private state live (MS101–MS119).
+Detectors for things Compact does not have (reentrancy, `delegatecall`, gas, inline assembly, inheritance, ERC interfaces, events) have no counterpart. On top of the shared bug classes, about half of the rules cover Midnight's privacy model, which the other tools do not deal with: disclosure of secrets (MS003, MS007, MS014, MS021, MS023), nullifiers (MS008, MS018), Merkle membership (MS009, MS010), transient hashes (MS012), and the DApp side where witnesses and private state live (MS101–MS120).
 
 ## Where it fits
 
@@ -506,8 +544,8 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 
 | Check | What it proves | Command |
 | --- | --- | --- |
-| **Unit and integration tests** (310 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
-| **Benchmark** | 123 labeled files: the plain vulnerable pattern for each rule, variants written to evade it (aliases, helper circuits, wrappers, other names), and safe code that looks similar. Precision and recall per rule, and every known miss, in [bench/RESULTS.md](bench/RESULTS.md) | `npm run bench` |
+| **Unit and integration tests** (355 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
+| **Benchmark** | 164 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
 | **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is checked by hand and listed with the reason in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |
@@ -522,7 +560,7 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 - [x] **v0.3** Merkle and secret rules, corpus verification, real-compiler CI
 - [x] **v0.4** Disclosure map, confidence, baselines, Markdown, plugins, autofix, TypeScript checks, playground, VS Code extension, npm package
 - [x] **v0.5** Repository and folder scanning in the playground, project logo, GitHub Packages
-- [x] **Next** Privacy diff on pull requests, status badge, suggested fixes, accuracy benchmark, 51 rules (MS011–MS032, MS103–MS119)
+- [x] **Next** Privacy diff on pull requests, status badge, suggested fixes, accuracy benchmark, 53 rules (MS011–MS033, MS103–MS120)
 - [ ] Witness implementations checked against the contract that declares them (beyond MS113)
 - [ ] MCP server and language server
 - [ ] Ignore comments with a recorded reason, and strict / recommended presets

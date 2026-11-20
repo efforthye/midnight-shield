@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- **MS120 secret-from-public-data**: a secret computed only from public values (a wallet address, a public key), so anyone can recompute it. Found in a public project, where every role's secret key was derived from the user's public coin key.
+- **MS033 unsupported-language-version** and a CLI warning: files whose `pragma language_version` lies outside the tested range (Compact 0.16–0.28), and files with parts the parser skipped (MS000), are reported on stderr so a clean result is never silently partial. The README lists the supported versions.
+- DApp secrets are now tracked by where the value comes from, not only by name: a variable assigned from `privateState.secretKey`, a seed or mnemonic generator, or a re-encoded secret counts as a secret in MS102, MS104, MS106, MS110, MS111, MS114, MS116 and MS117.
+- The benchmark has more evasion variants and look-alike safe code for the ten core rules (MS001–MS004, MS007–MS009, MS011, MS013, MS014), with their own precision and recall table, and minimal reproductions of the real bugs found in public projects (`bench/known`). CI compiles every Compact benchmark file with the real compiler.
+
+### Fixed
+
+- MS009 now counts a Merkle path as bound only when its leaf is compared with a value derived from a witness; comparing it with a caller-supplied parameter does not tie it to the caller.
+- MS105 no longer follows `Math.random()` through a `let` that is reassigned elsewhere (a mock value in a fallback branch), which reported the wrong cause in a public project.
+
 ## [0.6.0] - 2026-11-20
 
 ### Added
