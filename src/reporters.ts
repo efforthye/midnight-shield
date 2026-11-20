@@ -1,5 +1,5 @@
 import type { Finding } from "./linter.js";
-import { RULES, ruleDocUrl, type Severity } from "./rules.js";
+import { RULES, SEVERITY_ORDER, ruleDocUrl, type Severity } from "./rules.js";
 
 const COLORS: Record<Severity, string> = {
   critical: "\x1b[35m",
@@ -11,28 +11,58 @@ const COLORS: Record<Severity, string> = {
 const RESET = "\x1b[0m";
 const DIM = "\x1b[2m";
 
-export function formatText(findings: Finding[], fileCount: number, color = true): string {
+export interface TextOptions {
+  color?: boolean;
+  /** show the source line and a caret under each finding (default: true) */
+  codeFrame?: boolean;
+  /** show the rule documentation link (default: true) */
+  links?: boolean;
+}
+
+function caretLength(snippet: string, col: number): number {
+  const rest = snippet.slice(col - 1);
+  const m = rest.match(/^[A-Za-z_$][\w$]*(\(\))?/);
+  return m ? m[0].length : 1;
+}
+
+export function formatText(findings: Finding[], fileCount: number, options: TextOptions | boolean = {}): string {
+  const opts: TextOptions = typeof options === "boolean" ? { color: options } : options;
+  const color = opts.color ?? true;
+  const codeFrame = opts.codeFrame ?? true;
+  const links = opts.links ?? true;
   const c = (code: string, s: string) => (color ? code + s + RESET : s);
   const lines: string[] = [];
   let currentFile = "";
   for (const f of findings) {
     if (f.file !== currentFile) {
       if (currentFile) lines.push("");
-      lines.push(c("\x1b[4m", f.file));
+      lines.push(c("\x1b[1;4m", f.file));
       currentFile = f.file;
     }
-    const sev = c(COLORS[f.severity], f.severity.toUpperCase().padEnd(8));
-    lines.push(`  ${`${f.line}:${f.col}`.padEnd(8)} ${sev} ${f.ruleId} ${c(DIM, f.ruleName)}`);
-    lines.push(`           ${f.message}`);
+    lines.push("");
+    const sev = c("\x1b[1m" + COLORS[f.severity], f.severity.toUpperCase().padEnd(8));
+    lines.push(`  ${sev}  ${c("\x1b[1m", f.ruleId)} ${c(DIM, f.ruleName)}  ${c(DIM, `${f.file}:${f.line}:${f.col}`)}`);
+    lines.push(`  ${f.message}`);
+    if (codeFrame && f.snippet.trim()) {
+      const num = String(f.line);
+      const gutter = " ".repeat(num.length);
+      const text = f.snippet.replace(/\t/g, " ");
+      lines.push(`    ${c(DIM, num + " │")} ${text}`);
+      lines.push(`    ${c(DIM, gutter + " │")} ${" ".repeat(Math.max(0, f.col - 1))}${c(COLORS[f.severity], "^".repeat(caretLength(text, f.col)))}`);
+    }
+    if (links) lines.push(`  ${c(DIM, "→ " + f.docUrl)}`);
   }
   const counts = new Map<Severity, number>();
   for (const f of findings) counts.set(f.severity, (counts.get(f.severity) ?? 0) + 1);
-  const summary = [...counts.entries()].map(([s, n]) => `${n} ${s}`).join(", ");
+  const summary = SEVERITY_ORDER.filter((sv) => counts.has(sv))
+    .map((sv) => c(COLORS[sv], `${counts.get(sv)} ${sv}`))
+    .join(", ");
   if (lines.length) lines.push("");
+  const files = `${fileCount} file${fileCount === 1 ? "" : "s"}`;
   lines.push(
     findings.length
-      ? `${findings.length} finding${findings.length === 1 ? "" : "s"} in ${fileCount} file${fileCount === 1 ? "" : "s"} (${summary})`
-      : `No findings in ${fileCount} file${fileCount === 1 ? "" : "s"}.`,
+      ? `${c("\x1b[1m", `✖ ${findings.length} finding${findings.length === 1 ? "" : "s"}`)} in ${files} (${summary})`
+      : c("\x1b[32m", `✔ No findings in ${files}.`),
   );
   return lines.join("\n");
 }
@@ -100,4 +130,4 @@ export function formatSarif(findings: Finding[]): string {
   return JSON.stringify(sarif, null, 2);
 }
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
