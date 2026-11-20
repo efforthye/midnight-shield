@@ -44,6 +44,7 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh \
             | COMPACT_INSTALL_DIR="$HOME/compact" INSTALLER_NO_MODIFY_PATH=1 sh
+          echo "$HOME/compact" >> "$GITHUB_PATH"
           echo "$HOME/compact/bin" >> "$GITHUB_PATH"
       - name: Install the latest compiler
         run: compact update
