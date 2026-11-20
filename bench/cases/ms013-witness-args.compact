@@ -1,0 +1,11 @@
+// expect: MS013
+// note: Boolean witness that takes arguments (real project pattern)
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger debt: Uint<128>;
+witness verifyHealthFactor(amount: Uint<128>, price: Uint<128>): Boolean;
+export circuit borrow(amount: Uint<128>, price: Uint<128>): [] {
+  assert(verifyHealthFactor(disclose(amount), disclose(price)), "insufficient collateral");
+  debt = disclose(amount);
+}

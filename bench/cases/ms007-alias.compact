@@ -1,0 +1,11 @@
+// expect: MS007
+// note: secret through a local alias
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger stored: Bytes<32>;
+witness privKey(): Bytes<32>;
+export circuit f(): [] {
+  const x = privKey();
+  stored = disclose(x);
+}

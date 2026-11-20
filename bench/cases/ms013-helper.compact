@@ -1,0 +1,12 @@
+// expect: MS013
+// note: witness wrapped in a helper circuit
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger n: Counter;
+witness allowed(): Boolean;
+circuit check(): Boolean { return allowed(); }
+export circuit reset(): [] {
+  assert(disclose(check()), "no");
+  n.resetToDefault();
+}

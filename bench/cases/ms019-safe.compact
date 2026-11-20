@@ -1,0 +1,16 @@
+// expect: none
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger ownerId: Bytes<32>;
+witness secretKey(): Bytes<32>;
+export circuit deriveId(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:owner:"), sk]);
+}
+constructor() {
+  ownerId = disclose(deriveId(secretKey()));
+}
+export circuit pay(a: Uint<64>, to: UserAddress): [] {
+  assert(deriveId(secretKey()) == ownerId, "not the owner");
+  sendUnshielded(default<Bytes<32>>, disclose(a) as Uint<128>, right<ContractAddress, UserAddress>(disclose(to)));
+}

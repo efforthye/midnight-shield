@@ -1,0 +1,6 @@
+// expect: MS031
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger reserve: Field;
+export circuit take(a: Field): [] { reserve = reserve - disclose(a); }

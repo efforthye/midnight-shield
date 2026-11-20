@@ -1,0 +1,7 @@
+// expect: MS002
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger balance: Uint<64>;
+witness myBalance(): Uint<64>;
+export circuit sync(): [] { balance = disclose(myBalance()); }

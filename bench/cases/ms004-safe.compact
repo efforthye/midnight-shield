@@ -1,0 +1,10 @@
+// expect: none
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger c: Bytes<32>;
+witness amount(): Uint<64>;
+witness randomness(): Bytes<32>;
+export circuit commit(): [] {
+  c = disclose(persistentCommit<Uint<64>>(amount(), randomness()));
+}

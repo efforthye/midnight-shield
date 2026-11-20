@@ -1,0 +1,10 @@
+// expect: none
+// note: disclose() on a secret that goes straight into a hash (real project pattern)
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger callerId: Bytes<32>;
+witness getSecretKey(): Bytes<32>;
+export circuit register(): [] {
+  callerId = persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:id:"), disclose(getSecretKey())]);
+}

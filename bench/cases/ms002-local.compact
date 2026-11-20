@@ -1,0 +1,12 @@
+// expect: MS002
+// note: through locals and arithmetic
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger score: Uint<32>;
+witness myScore(): Uint<32>;
+export circuit sync(): [] {
+  const s = myScore();
+  const t = s + 1;
+  score = disclose(t);
+}

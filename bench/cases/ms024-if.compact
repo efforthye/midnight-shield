@@ -1,0 +1,6 @@
+// expect: MS024
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger x: Uint<64>;
+export circuit f(): [] { if (true) { x = 1; } }

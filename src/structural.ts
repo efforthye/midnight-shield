@@ -3,6 +3,7 @@
 // prover chooses) and MS014 (commitment randomness made public).
 
 import type { RawFinding } from "./analyzer.js";
+import { isSecretName } from "./analyzer.js";
 import type { Decl, Expr, Program, Stmt } from "./ast.js";
 import { collect, exprs, stmtExprs, stmts, type Ctx } from "./auth-writes.js";
 
@@ -90,6 +91,16 @@ function transientInState(program: Program, ctx: Ctx): RawFinding[] {
 /** MS013: assert(w()) where w is a Boolean witness. The prover chooses the witness value, so the check proves nothing. */
 function witnessControlledAssert(program: Program): RawFinding[] {
   const bools = booleanWitnesses(program.decls);
+  // helper circuits that only pass a Boolean witness through: circuit check(): Boolean { return isAdmin(); }
+  const helpers = (ds: Decl[]) => {
+    for (const d of ds) {
+      if (d.kind === "module") helpers(d.decls);
+      if (d.kind !== "circuit" || d.returnType?.name !== "Boolean" || !d.body || d.body.length !== 1) continue;
+      const r = d.body[0];
+      if (r.kind === "return" && r.value && isCallTo(unwrap(r.value), bools)) bools.add(d.name);
+    }
+  };
+  helpers(program.decls);
   if (!bools.size) return [];
   const out: RawFinding[] = [];
   for (const b of bodies(program.decls)) {
@@ -113,6 +124,19 @@ function witnessControlledAssert(program: Program): RawFinding[] {
       return undefined;
     };
     for (const s of stmts(b.body)) {
+      // if (disclose(isAdmin())) { … }: the same check written as a branch
+      if (s.kind === "if") {
+        const w = isWitnessBool(s.test);
+        if (w) {
+          out.push({
+            ruleId: "MS013",
+            severity: "high",
+            confidence: "high",
+            loc: s.loc,
+            message: `This if decides on '${w}', a value the prover supplies through a witness. The prover can return whatever takes the branch it wants, so the condition controls nothing. Decide on something the contract trusts instead: a value stored in the ledger, a hash of a secret, or a Merkle proof.`,
+          });
+        }
+      }
       for (const e of stmtExprs(s)) {
         if (callee(e) !== "assert" || e.kind !== "call" || !e.args[0]) continue;
         const w = isWitnessBool(e.args[0]);
@@ -131,6 +155,17 @@ function witnessControlledAssert(program: Program): RawFinding[] {
 }
 
 const COMMIT = new Set(["persistentCommit", "transientCommit"]);
+const HASHING = new Set(["persistentCommit", "transientCommit", "persistentHash", "transientHash"]);
+
+/** disclose() calls that sit inside a hash or commitment argument: their value is not made public as is. */
+function hashedDiscloses(es: Expr[]): Set<Expr> {
+  const out = new Set<Expr>();
+  for (const e of es) {
+    if (!isCallTo(e, HASHING) || e.kind !== "call") continue;
+    for (const a of e.args) for (const x of exprs(a)) if (callee(x) === "disclose") out.add(x);
+  }
+  return out;
+}
 
 /** MS014: the randomness of a commitment is also made public, which lets anyone open the commitment. */
 function randomnessDisclosed(program: Program, ctx: Ctx): RawFinding[] {
@@ -152,6 +187,8 @@ function randomnessDisclosed(program: Program, ctx: Ctx): RawFinding[] {
       }
     }
   }
+  // a secret key used as randomness is MS023, and disclosing it is MS007
+  for (const w of [...randWitnesses]) if (isSecretName(w) && !/rand|salt|nonce|blind|entropy/i.test(w)) randWitnesses.delete(w);
   if (!randWitnesses.size) return out;
   for (const b of bodies(program.decls)) {
     // a circuit that checks a commitment in an assert is opening it on purpose (commit-reveal)
@@ -165,8 +202,9 @@ function randomnessDisclosed(program: Program, ctx: Ctx): RawFinding[] {
         const x = unwrap(s.init);
         if (x.kind === "call" && x.callee.kind === "ident" && randWitnesses.has(x.callee.name)) locals.set(s.names[0], x.callee.name);
       }
+      const inside = hashedDiscloses([...stmtExprs(s)]);
       for (const e of stmtExprs(s)) {
-        if (callee(e) !== "disclose" || e.kind !== "call" || !e.args[0]) continue;
+        if (callee(e) !== "disclose" || e.kind !== "call" || !e.args[0] || inside.has(e)) continue;
         const x = unwrap(e.args[0]);
         const w = x.kind === "call" && x.callee.kind === "ident" && randWitnesses.has(x.callee.name) ? x.callee.name : x.kind === "ident" ? locals.get(x.name) : undefined;
         if (!w) continue;
@@ -183,8 +221,43 @@ function randomnessDisclosed(program: Program, ctx: Ctx): RawFinding[] {
   return out;
 }
 
+/** MS014 (parameters): a circuit parameter is the randomness of a commitment and is also disclosed in the same circuit. */
+function paramRandomnessDisclosed(program: Program): RawFinding[] {
+  const out: RawFinding[] = [];
+  const circuits: Extract<Decl, { kind: "circuit" }>[] = [];
+  const walkC = (ds: Decl[]) => ds.forEach((d) => (d.kind === "circuit" && d.body ? circuits.push(d) : d.kind === "module" ? walkC(d.decls) : undefined));
+  walkC(program.decls);
+  for (const c of circuits) {
+    const params = new Set(c.params.map((p) => p.name));
+    const rand = new Set<string>();
+    const all = [...stmts(c.body!)].flatMap((s) => [...stmtExprs(s)]);
+    for (const e of all) {
+      if (!isCallTo(e, COMMIT) || e.kind !== "call" || e.args.length < 2) continue;
+      const r = unwrap(e.args[e.args.length - 1]);
+      if (r.kind === "ident" && params.has(r.name)) rand.add(r.name);
+    }
+    if (!rand.size) continue;
+    // disclose(p) on its own, not the commitment that contains p
+    if (all.some((e) => callee(e) === "assert" && e.kind === "call" && !!e.args[0] && [...exprs(e.args[0])].some((x) => isCallTo(x, COMMIT)))) continue;
+    const inside = hashedDiscloses(all);
+    for (const e of all) {
+      if (callee(e) !== "disclose" || e.kind !== "call" || !e.args[0] || inside.has(e)) continue;
+      const x = unwrap(e.args[0]);
+      if (x.kind !== "ident" || !rand.has(x.name)) continue;
+      out.push({
+        ruleId: "MS014",
+        severity: "high",
+        confidence: "medium",
+        loc: e.loc,
+        message: `'${x.name}' is the randomness of a commitment in '${c.name}', and here it is made public as well. With the randomness, anyone can open the commitment by trying candidate values. Keep commitment randomness private (a witness is the usual source).`,
+      });
+    }
+  }
+  return out;
+}
+
 export function checkStructural(program: Program): RawFinding[] {
   const ctx: Ctx = { ledger: new Set(), witnesses: new Set(), circuits: new Map(), enums: new Set() };
   collect(program.decls, ctx);
-  return [...transientInState(program, ctx), ...witnessControlledAssert(program), ...randomnessDisclosed(program, ctx)];
+  return [...transientInState(program, ctx), ...witnessControlledAssert(program), ...randomnessDisclosed(program, ctx), ...paramRandomnessDisclosed(program)];
 }

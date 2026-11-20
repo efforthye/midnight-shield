@@ -21,6 +21,9 @@ const BUILTINS = new Set([
   "receive", "send", "sendImmediate", "mergeCoin", "mergeCoinImmediate", "createZswapInput",
   "createZswapOutput", "burnAddress", "blockTimeLessThan", "blockTimeGreaterThan",
   "blockTimeGte", "blockTimeLt", "map", "fold", "slice", "assert",
+  "sendShielded", "sendUnshielded", "mintShieldedToken", "mintUnshieldedToken", "receiveShielded", "receiveUnshielded",
+  "unshieldedBalance", "unshieldedBalanceLt", "unshieldedBalanceGte", "unshieldedBalanceLte", "unshieldedBalanceGt",
+  "shieldedBurnAddress", "kernel", "self", "left", "right",
 ]);
 
 /** Ledger ADT methods that change state. */
@@ -196,7 +199,7 @@ interface Reach {
 }
 
 /** Writes to auth fields reachable from a circuit, and whether anything on the way may check the caller. */
-function reach(c: Circuit, ctx: Ctx, fields: Set<string>, seen = new Set<string>()): Reach {
+export function reach(c: Circuit, ctx: Ctx, fields: Set<string>, seen = new Set<string>()): Reach {
   const result: Reach = { writes: [], guarded: false };
   if (seen.has(c.name)) return result;
   seen.add(c.name);
@@ -221,10 +224,17 @@ function reach(c: Circuit, ctx: Ctx, fields: Set<string>, seen = new Set<string>
   return result;
 }
 
+/** Ledger fields whose names say they decide who is in charge. */
+const AUTH_NAME = /^_?(owner|admins?|authority|operator|controller|minter|governor|guardian|manager|superuser|root(Admin)?)(Id|Key|PublicKey|Address|Commitment|Hash|s)?$/i;
+
 export function checkAuthWrites(program: Program): RawFinding[] {
   const ctx: Ctx = { ledger: new Set(), witnesses: new Set(), circuits: new Map(), enums: new Set() };
   collect(program.decls, ctx);
-  const fields = authFields(ctx);
+  const checked = authFields(ctx);
+  // fields named like an owner or admin count too, with lower confidence: the
+  // contract may not compare them anywhere yet (then anyone can set them freely)
+  const named = new Set([...ctx.ledger].filter((n) => AUTH_NAME.test(n) && !checked.has(n)));
+  const fields = new Set([...checked, ...named]);
   if (!fields.size) return [];
   const out: RawFinding[] = [];
   const reported = new Set<string>();
@@ -236,12 +246,15 @@ export function checkAuthWrites(program: Program): RawFinding[] {
       const key = `${w.loc.line}:${w.loc.col}`;
       if (reported.has(key)) continue;
       reported.add(key);
+      const byName = named.has(w.field);
       out.push({
         ruleId: "MS011",
         severity: "high",
-        confidence: "medium",
+        confidence: byName ? "low" : "medium",
         loc: w.loc,
-        message: `'${c.name}' changes '${w.field}', which the contract uses to authorize callers, but nothing in '${c.name}' checks who is calling. Anyone can call it and take over '${w.field}'. Assert that the caller is the current owner (prove knowledge of the secret behind '${w.field}') before changing it.`,
+        message: byName
+          ? `'${c.name}' changes '${w.field}', which by its name decides who is in charge, and nothing in '${c.name}' checks who is calling. Anyone can call it and set '${w.field}'. Assert that the caller is the current ${w.field.replace(/^_/, "")} (prove knowledge of a secret whose hash is stored) before changing it.`
+          : `'${c.name}' changes '${w.field}', which the contract uses to authorize callers, but nothing in '${c.name}' checks who is calling. Anyone can call it and take over '${w.field}'. Assert that the caller is the current owner (prove knowledge of the secret behind '${w.field}') before changing it.`,
       });
     }
   }

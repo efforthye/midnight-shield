@@ -1,0 +1,10 @@
+// expect: none
+// note: disclose() inside the commitment arguments does not publish the randomness (real project pattern)
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger c: Bytes<32>;
+witness getRandomness(): Bytes<32>;
+export circuit commit(amount: Uint<128>): [] {
+  c = persistentCommit<Uint<128>>(disclose(amount), disclose(getRandomness()));
+}

@@ -107,7 +107,8 @@ export function isSecretName(name: string): boolean {
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
   if (words.some((w) => SECRET_WORDS.has(w))) return true;
-  return words.some((w, i) => w === "private" && words[i + 1] === "key");
+  // privateKey, privKey, signingKey, spendingKey
+  return words.some((w, i) => ["private", "priv", "signing", "spending"].includes(w) && words[i + 1] === "key");
 }
 
 function noSecret(i: Info): Info {
@@ -526,7 +527,10 @@ export class Analyzer {
         if (s.value) {
           const v = this.evalExpr(s.value, frame);
           frame.returns.push(v);
-          if (frame.exported && frame.depth === 0) this.recordDisclosure(v, s.loc, frame, "return");
+          if (frame.exported && frame.depth === 0) {
+            this.recordDisclosure(v, s.loc, frame, "return");
+            if (v.rawSecret?.size) this.sink(v, s.loc, frame, false, undefined, true);
+          }
         }
         break;
       }
@@ -545,7 +549,7 @@ export class Analyzer {
   }
 
   /** A value becomes public here (disclose() or a ledger write). */
-  private sink(info: Info, loc: Loc, frame: Frame, isWrite = false, target?: string): void {
+  private sink(info: Info, loc: Loc, frame: Frame, isWrite = false, target?: string, reportSecret = true): void {
     if (isWrite) frame.nullifier.writes = true;
     if (info.identity && frame.exported !== false) {
       const uses = this.identityUses.get(info.identity) ?? new Map<string, Loc>();
@@ -555,7 +559,9 @@ export class Analyzer {
     }
     this.recordDisclosure(info, loc, frame, isWrite ? "ledger write" : "disclose", target);
     for (const w of info.rawWitness) if (!this.witnessSinks.has(w)) this.witnessSinks.set(w, frame.anchor ?? loc);
-    if (info.rawSecret?.size) {
+    // a field named as a public key (signingPublicKey, ownerPk) holds a public value under a key-like parameter name
+    const publicTarget = !!target && /public|(^|[a-z])(Pub|Pk)(Key)?$|^pk$/i.test(target.split(".")[0]);
+    if (reportSecret && info.rawSecret?.size && !publicTarget) {
       const names = [...info.rawSecret].map((s) => (s.startsWith("w:") ? `witness '${s.slice(2)}()'` : `parameter '${s.slice(2)}'`));
       this.report(
         "MS007",
@@ -715,7 +721,12 @@ export class Analyzer {
 
     // lambdas passed to fold/map: bind their parameters to the data being iterated
     const lambdas = e.args.filter((a): a is Extract<Expr, { kind: "lambda" }> => a.kind === "lambda");
-    const plain = e.args.filter((a) => a.kind !== "lambda").map((a) => this.evalExpr(a, frame));
+    // disclose(x) passed straight into a hash or commitment: only the result can become
+    // public, so x keeps its secrecy for the entropy and randomness checks
+    const hashing = !!name && (HASH_FNS.has(name) || COMMIT_FNS.has(name));
+    const stripDisclose = (a: Expr): Expr =>
+      hashing && a.kind === "call" && a.callee.kind === "ident" && a.callee.name === "disclose" && a.args[0] ? stripDisclose(a.args[0]) : a;
+    const plain = e.args.filter((a) => a.kind !== "lambda").map((a) => this.evalExpr(stripDisclose(a), frame));
     if (lambdas.length) {
       const data = union(plain);
       const results = lambdas.map((l) => this.evalLambda(l, data, frame));
@@ -752,11 +763,14 @@ export class Analyzer {
 
     if (name === "disclose") {
       const v = plain[0] ?? empty();
-      this.sink(v, e.loc, frame);
+      // disclose() only allows a value to become public. A raw secret is reported where it
+      // actually does (a ledger write or a return), so disclose(sk) passed into a hash,
+      // a commitment or a helper that hashes it is not a leak.
+      this.sink(v, e.loc, frame, false, undefined, false);
       // After disclose() the value is public: it carries no secret entropy.
       const sources = new Set([...v.sources].filter((x) => !x.startsWith("w:") && !x.startsWith("p:")));
       sources.add("disclosed");
-      return { ...v, sources, bits: 0, lowHash: undefined, rawSecret: undefined };
+      return { ...v, sources, bits: 0, lowHash: undefined };
     }
 
     if (name && WRAPPER_FNS.has(name)) return union(plain);

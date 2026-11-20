@@ -219,6 +219,90 @@ export function suggestFix(ruleId: string, message: string, line: string): Sugge
         note: `Open the commitment inside the circuit, so ${w}() is used but never published. Use your commitment's value type and ledger field.`,
       };
     }
+    case "MS015":
+    case "MS016":
+      return { before, after: [], note: ruleId === "MS015" ? "Remove the witness, or call it where a check was meant to use it." : "Remove the circuit (and its body), or call it where it was meant to be used." };
+    case "MS017": {
+      let after = line.replace(/>=\s*0\b/, "> 0").replace(/\b0\s*<=/, "0 <");
+      if (after === line) after = line.replace(/assert\(\s*(disclose\()?true\)?/, "assert(/* the real condition */");
+      return after === line ? undefined : { before, after: [after], note: "Write the condition you meant to enforce; the old one is always true." };
+    }
+    case "MS018": {
+      const set = [...message.matchAll(/'([^']+)'/g)][1]?.[1];
+      const c = callArgs(line, "insert");
+      if (!set || !c) return undefined;
+      const arg = line.slice(c.open + 1, c.close).trim();
+      return { before, after: [`${ind}assert(!${set}.member(${arg}), "already used");`, line], note: "Check the set before adding, so each nullifier can be used once." };
+    }
+    case "MS019":
+    case "MS020":
+      return {
+        before,
+        after: [`${ind}assert(deriveId(secretKey()) == ownerId, "not the owner");`, line],
+        note: "Check who is calling the same way the rest of the contract does (and limit the amount if needed).",
+      };
+    case "MS021": {
+      const tag = message.match(/tag \("([^"]*)"\)/)?.[1];
+      if (!tag || !line.includes(`"${tag}"`)) return undefined;
+      return { before, after: [line.replace(`"${tag}"`, `"${tag.replace(/:?$/, ":")}nullifier:"`)], note: "Nullifiers and leaves need different tags, so the two values cannot be matched." };
+    }
+    case "MS022": {
+      const name = quoted(message);
+      if (!name) return undefined;
+      const renamed = `new${name[0].toUpperCase()}${name.slice(1)}`;
+      const after = line.replace(new RegExp(`\\b${name}\\b(?=\\s*[:=])`), renamed);
+      return after === line ? undefined : { before, after: [after], note: `Then use ${renamed} wherever the circuit meant the local value.` };
+    }
+    case "MS023": {
+      const after = weakRandomness(line);
+      return after ? { before, after: [after], note: "Add witness randomness(): Bytes<32>; returning fresh random bytes, kept privately to open the commitment later." } : undefined;
+    }
+    case "MS024": {
+      if (/assert\(\s*false/.test(line)) return { before, after: [], note: "Remove the circuit if it should not be callable; otherwise write the real condition." };
+      const after = line.replace(/if\s*\(\s*(disclose\()?(true|false)\)?\s*\)/, "if (/* the real condition */)");
+      return after === line ? undefined : { before, after: [after], note: "A constant condition is usually a check that was switched off while debugging." };
+    }
+    case "MS025":
+      return { before, after: [], note: "Remove one of the two writes, or point it at the field that was meant." };
+    case "MS026": {
+      const name = quoted(message);
+      if (!name) return undefined;
+      const after = line.replace(new RegExp(`\\b${name}\\b(?=\\s*[:=(])`), `${name}Value`);
+      return after === line ? undefined : { before, after: [after], note: `Then use ${name}Value where this value was meant.` };
+    }
+    case "MS027": {
+      const body = line.trim().replace(/;$/, "");
+      return { before, after: [`${ind}assert(${body}, "check failed");`] };
+    }
+    case "MS028":
+      return {
+        before,
+        after: [
+          line,
+          `${ind}// and add a withdrawal circuit, guarded by a caller check:`,
+          `${ind}// export circuit withdraw(…): … { assert(deriveId(secretKey()) == ownerId, "not the owner"); sendShielded(…); }`,
+        ],
+      };
+    case "MS029": {
+      const body = line.trim().replace(/;$/, "");
+      return { before, after: [`${ind}assert(${body}, "check failed");`], note: "If it was meant as an assignment, write target = value instead." };
+    }
+    case "MS030": {
+      const after = line.replace(/[‪-‮⁦-⁩‎‏؜]/g, "");
+      return after === line ? undefined : { before, after: [after] };
+    }
+    case "MS031": {
+      const field = quoted(message) ?? "reserve";
+      return {
+        before,
+        after: [`${ind}assert(${field} >= amount, "insufficient");  // with ${field}: Uint<128> in the ledger declaration`, line],
+        note: `Declare export ledger ${field}: Uint<128>; (and Uint parameters), so overflow and underflow fail instead of wrapping.`,
+      };
+    }
+    case "MS032": {
+      const name = quoted(message);
+      return { before, after: [], note: name ? `Remove '${name}', or use it in the check it was meant for.` : undefined };
+    }
     case "MS101": {
       const after = line.replace(/(["'])(?:https?|wss?):\/\/[^"']*\1/, 'process.env.MIDNIGHT_PROOF_SERVER ?? "http://localhost:6300"');
       return after === line ? undefined : { before, after: [after], note: "Run the proof server on the user's own machine." };
@@ -248,6 +332,67 @@ export function suggestFix(ruleId: string, message: string, line: string): Sugge
         ? line.replace(interp, `\${publicKeyOf(${name})}`)
         : line.replace(new RegExp(`([({,]\\s*)${name}(\\s*[,})])`), `$1publicKey: publicKeyOf(${name})$2`).replace(new RegExp(`(:\\s*)${name}\\b(?!\\s*\\()`), `$1publicKeyOf(${name})`);
       return after === line ? undefined : { before, after: [after], note: "Send something derived from the secret (a public key or a hash), never the secret. If you need a backup, encrypt it on the device first." };
+    }
+    case "MS107": {
+      if (/NODE_TLS_REJECT_UNAUTHORIZED/.test(line)) return { before, after: [], note: "Remove it; trust a self-signed certificate with NODE_EXTRA_CA_CERTS instead." };
+      const after = line.replace(/(rejectUnauthorized|strictSSL)\s*:\s*false/, 'ca: readFileSync("ca.pem")');
+      return after === line ? undefined : { before, after: [after], note: "Keep certificate checks on; add your CA certificate if the server uses a self-signed one." };
+    }
+    case "MS108": {
+      const after = line.replace(/\beval\(/, "JSON.parse(");
+      return after === line ? undefined : { before, after: [after], note: "If the string is data, parse it. If it is code, ship it as a module you control instead of evaluating text." };
+    }
+    case "MS109": {
+      const after = line.replace(/(["'`])http:\/\//, "$1https://").replace(/(["'`])ws:\/\//, "$1wss://");
+      return after === line ? undefined : { before, after: [after] };
+    }
+    case "MS110": {
+      let after = line;
+      for (const n of [...message.matchAll(/'([^']+)'/g)].map((m) => m[1])) after = after.replace(new RegExp(`\\$\\{${n}\\}`, "g"), "[redacted]");
+      return after === line ? undefined : { before, after: [after], note: "Say what is wrong with the value (its length, its format), not the value itself." };
+    }
+    case "MS111": {
+      const name = quoted(message);
+      if (!name) return undefined;
+      const after = line.replace(new RegExp(`([,(]\\s*)${name}\\b(?!\\s*[(:.])`), `$1encrypt(${name}, passwordFromUser)`);
+      return after === line ? undefined : { before, after: [after], note: "encrypt stands for an authenticated encryption with a key the user supplies, or use the OS keychain." };
+    }
+    case "MS112": {
+      const after = line.replace(/(["'`])\*\1/, '"https://app.example.com"');
+      return after === line ? undefined : { before, after: [after], note: "Use the exact origin of the page you mean to talk to." };
+    }
+    case "MS113": {
+      const after = line.replace(/new Uint8Array\((\d+)\)/, "crypto.getRandomValues(new Uint8Array($1))").replace(/Buffer\.alloc\((\d+)\)/, "crypto.getRandomValues(new Uint8Array($1))").replace(/BigInt\(Date\.now\(\)\)|Date\.now\(\)/, "crypto.getRandomValues(new Uint8Array(32))");
+      return after === line ? undefined : { before, after: [after], note: "Store the value in private state if the contract needs the same randomness later (to open the commitment)." };
+    }
+    case "MS114": {
+      let after = line;
+      for (const n of [...message.matchAll(/'([^']+)'/g)].map((m) => m[1])) after = after.replace(new RegExp(`[?&#]?\\w*=?\\$\\{${n}\\}`, "g"), "");
+      return after === line ? undefined : { before, after: [after], note: "Pass secrets between pages in memory or in the private state provider, never in the URL." };
+    }
+    case "MS115": {
+      const after = line.replace(/\(\)\s*=>\s*(["'])[^"']*\1/, "() => askUserForPassword()").replace(/([:=]\s*)(["'])[^"']{4,}\2/, "$1process.env.PASSWORD ?? askUserForPassword()");
+      return after === line ? undefined : { before, after: [after], note: "Each user should have their own password (or one derived from their wallet)." };
+    }
+    case "MS116": {
+      const name = quoted(message);
+      if (!name) return undefined;
+      const after = line.replace(`{${name}}`, `{revealed ? ${name} : "•••• •••• ••••"}`);
+      return after === line ? undefined : { before, after: [after], note: "Show it only after the user presses a Reveal button, and mark the element to be excluded from session replay." };
+    }
+    case "MS117": {
+      let after = line;
+      for (const n of [...message.matchAll(/'([^']+)'/g)].map((m) => m[1])) after = after.replace(new RegExp(`\\{\\s*${n}\\s*\\}`), "{ walletId: publicIdOf(" + n + ") }").replace(new RegExp(`([,(]\\s*)${n}\\b(?!\\s*[(:.])`), "$1publicIdOf(" + n + ")");
+      return after === line ? undefined : { before, after: [after], note: "publicIdOf stands for a non-reversible identifier such as a public key." };
+    }
+    case "MS118": {
+      const after = line.replace(/\.innerHTML\s*=/, ".textContent =").replace(/\.outerHTML\s*=/, ".textContent =");
+      return after === line ? undefined : { before, after: [after], note: "If you need markup, sanitize it first (for example DOMPurify.sanitize)." };
+    }
+    case "MS119": {
+      const name = message.match(/^(\S+) has/)?.[1];
+      if (!name) return undefined;
+      return { before, after: [`${ind}// read ${name.replace(/^(VITE_|NEXT_PUBLIC_|REACT_APP_|PUBLIC_|EXPO_PUBLIC_|NUXT_PUBLIC_|GATSBY_)/, "")} on a server, or ask the user for their own seed`], note: "Rename the variable without the public prefix and keep it out of browser code." };
     }
     case "MS104":
       return {

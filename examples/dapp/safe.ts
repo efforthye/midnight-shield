@@ -30,3 +30,13 @@ export function newBidRandomness(): Uint8Array {
 export async function registerWallet(seed: string): Promise<void> {
   await fetch("https://api.example.com/register", { method: "POST", body: JSON.stringify({ publicKey: publicKeyOf(seed) }) });
 }
+
+export const witnesses = {
+  bidRandomness: ({ privateState }: { privateState: unknown }) => [privateState, crypto.getRandomValues(new Uint8Array(32))],
+};
+
+export function showMessage(el: HTMLElement, message: string) {
+  el.textContent = message;
+}
+
+export const indexerUrl = import.meta.env.VITE_INDEXER_URL;

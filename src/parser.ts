@@ -427,7 +427,7 @@ class Parser {
       const n = this.peek();
       // After real type arguments comes a call, a struct literal, or an operator /
       // closing token, never the start of another operand.
-      const ok = !(n.kind === "ident" || n.kind === "number" || n.kind === "string" || ["[", "!", "-"].includes(n.value));
+      const ok = !((n.kind === "ident" && n.value !== "as") || n.kind === "number" || n.kind === "string" || ["[", "!", "-"].includes(n.value));
       if (!ok) throw new ParseError("not type arguments", this.loc());
       return args;
     } catch {

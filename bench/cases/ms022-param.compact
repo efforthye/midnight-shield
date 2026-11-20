@@ -1,0 +1,6 @@
+// expect: MS022
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger total: Uint<64>;
+export circuit f(total: Uint<64>): [] { assert(disclose(total) > 0, "zero"); }

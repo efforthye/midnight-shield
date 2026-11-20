@@ -5,6 +5,7 @@
 import type { RawFinding } from "./analyzer.js";
 import { isSecretName } from "./analyzer.js";
 import { lex, type Token } from "./lexer.js";
+import { checkSdkMore } from "./sdk-checks.js";
 
 export const SDK_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 
@@ -107,6 +108,7 @@ export function lintSdkSource(source: string): RawFinding[] {
         const after = inner[k + 2]?.value ?? "";
         if (next === "." && SAFE_PROPERTIES.has(after)) continue; // secret.kind, seed.length: metadata only
         if (next === "(") continue; // isSecret(...): a function, not the value
+        if (inner[k - 1]?.value === "typeof") continue; // typeof seed: the type, not the value
         if (!secrets.includes(tok.value)) secrets.push(tok.value);
       }
       if (secrets.length) {
@@ -120,7 +122,7 @@ export function lintSdkSource(source: string): RawFinding[] {
       }
     }
   }
-  out.push(...hardcodedSecrets(tokens), ...browserStorage(tokens), ...insecureRandomness(tokens), ...secretsOverNetwork(tokens));
+  out.push(...hardcodedSecrets(tokens), ...browserStorage(tokens), ...indexedDbStorage(tokens), ...insecureRandomness(tokens), ...secretsOverNetwork(tokens), ...checkSdkMore(tokens));
   return out;
 }
 
@@ -205,6 +207,44 @@ function browserStorage(tokens: Token[]): RawFinding[] {
   return out;
 }
 
+/** MS104 for IndexedDB-style stores: store.put(privateState), localforage.setItem("seed", …), idbSet("private-state", …). */
+const IDB_OBJECT = /(idb|indexeddb|objectstore|store|db|localforage|keyval|dexie|table)$/i;
+const IDB_METHODS = new Set(["put", "add", "set", "setItem"]);
+function indexedDbStorage(tokens: Token[]): RawFinding[] {
+  const out: RawFinding[] = [];
+  const usesIdbKeyval = tokens.some((x) => x.kind === "string" && /idb-keyval/.test(x.value));
+  for (let i = 0; i + 3 < tokens.length; i++) {
+    const t = tokens[i];
+    let open = -1;
+    if (t.kind === "ident" && IDB_OBJECT.test(t.value) && tokens[i + 1].value === "." && IDB_METHODS.has(tokens[i + 2].value) && tokens[i + 3].value === "(") open = i + 3;
+    else if (t.kind === "ident" && (t.value === "set" || t.value === "setMany") && tokens[i - 1]?.value !== "." && tokens[i + 1].value === "(" && usesIdbKeyval) open = i + 1;
+    if (open === -1) continue;
+    const parts: Token[] = [];
+    for (let j = open, depth = 0; j < tokens.length; j++) {
+      const v = tokens[j].value;
+      if (v === "(") depth++;
+      else if (v === ")" && --depth === 0) break;
+      if (j === open) continue;
+      if (tokens[j].kind === "string") parts.push(tokens[j], ...templateExpressionTokens(tokens[j]));
+      else parts.push(tokens[j]);
+    }
+    const hit = parts.find((x) => {
+      if (x.kind !== "ident" && x.kind !== "string") return false;
+      const v = x.kind === "string" ? x.value.slice(1, -1) : x.value;
+      return /privatestate/i.test(v.replace(/[-_\s]/g, "")) || isSecretName(v);
+    });
+    if (!hit) continue;
+    out.push({
+      ruleId: "MS104",
+      severity: "high",
+      confidence: "medium",
+      loc: { line: t.line, col: t.col },
+      message: `Private data ('${hit.kind === "string" ? hit.value.slice(1, -1) : hit.value}') is saved to browser storage (${t.value}) unencrypted, where any script on the page can read it (an extension, an injected script, a compromised dependency). Keep private state in the Midnight private state provider, or encrypt it with a key the user controls.`,
+    });
+  }
+  return out;
+}
+
 /** Names of values that must be unpredictable: secrets, plus nonces, salts and randomness. */
 const isRandomnessName = (name: string) => isSecretName(name) || /(nonce|salt|rand(om)?(ness)?|blind|entropy|coin)(?![a-z])/i.test(name.replace(/([a-z0-9])([A-Z])/g, "$1_$2"));
 
@@ -230,29 +270,27 @@ function statementAround(tokens: Token[], i: number): Token[] {
 }
 
 /** MS105: Math.random() used to make a secret, seed, key, nonce, salt or commitment randomness. */
+/** The name a value at index i is assigned to: `name = …`, `name: …`, or the function it is returned from. */
+function assignedName(tokens: Token[], i: number): string | undefined {
+  const stmt = statementAround(tokens, i);
+  const names: string[] = [];
+  for (let k = 0; k + 1 < stmt.length; k++) {
+    const next = stmt[k + 1].value;
+    if (stmt[k].kind === "ident" && (next === "=" || next === ":") && stmt[k + 2]?.value !== "=" && stmt[k + 2]?.value !== ">") names.push(stmt[k].value);
+  }
+  if (names.length) return names.find(isRandomnessName) ?? names[0];
+  for (let j = i - 1; j >= 0 && j >= i - 200; j--) {
+    if (tokens[j].value === "function" && tokens[j + 1]?.kind === "ident") return tokens[j + 1].value;
+  }
+  return undefined;
+}
+
 function insecureRandomness(tokens: Token[]): RawFinding[] {
   const out: RawFinding[] = [];
-  for (let i = 0; i + 3 < tokens.length; i++) {
-    if (tokens[i].value !== "Math" || tokens[i + 1].value !== "." || tokens[i + 2].value !== "random" || tokens[i + 3].value !== "(") continue;
-    const stmt = statementAround(tokens, i);
-    // the name being assigned: `name = …`, `name: …`, or the function the value is returned from
-    let target: string | undefined;
-    const names: string[] = [];
-    for (let k = 0; k + 1 < stmt.length; k++) {
-      const next = stmt[k + 1].value;
-      if (stmt[k].kind === "ident" && (next === "=" || next === ":") && stmt[k + 2]?.value !== "=" && stmt[k + 2]?.value !== ">") names.push(stmt[k].value);
-    }
-    if (names.length) target = names.find(isRandomnessName) ?? names[0];
-    if (!target) {
-      // `return …Math.random()…` inside a function with a telling name
-      for (let j = i - 1; j >= 0 && j >= i - 200; j--) {
-        if (tokens[j].value === "function" && tokens[j + 1]?.kind === "ident") {
-          target = tokens[j + 1].value;
-          break;
-        }
-      }
-    }
-    if (!target || !isRandomnessName(target)) continue;
+  const isMathRandom = (i: number) => tokens[i].value === "Math" && tokens[i + 1]?.value === "." && tokens[i + 2]?.value === "random" && tokens[i + 3]?.value === "(";
+  // values and wrappers made from Math.random() under a neutral name: `const r = Math.random()`, `const rnd = () => Math.random()`
+  const tainted = new Set<string>();
+  const flag = (i: number, target: string) =>
     out.push({
       ruleId: "MS105",
       severity: "high",
@@ -260,6 +298,17 @@ function insecureRandomness(tokens: Token[]): RawFinding[] {
       loc: { line: tokens[i].line, col: tokens[i].col },
       message: `'${target}' is made with Math.random(), which is not cryptographically secure: its output can be predicted from earlier values. Secrets, seeds, nonces and commitment randomness need crypto.getRandomValues() (browser) or crypto.randomBytes() (Node.js).`,
     });
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i + 3 < tokens.length; i++) {
+      const direct = isMathRandom(i);
+      const viaName = pass === 1 && tokens[i].kind === "ident" && tainted.has(tokens[i].value) && tokens[i + 1]?.value !== "=" && tokens[i - 1]?.value !== "const" && tokens[i - 1]?.value !== "let" && tokens[i - 1]?.value !== "function";
+      if (!(pass === 0 ? direct : viaName)) continue;
+      const target = assignedName(tokens, i);
+      if (!target) continue;
+      if (isRandomnessName(target)) {
+        if (!out.some((f) => f.loc.line === tokens[i].line)) flag(i, target);
+      } else if (pass === 0) tainted.add(target);
+    }
   }
   return out;
 }
@@ -280,7 +329,7 @@ function secretsOverNetwork(tokens: Token[]): RawFinding[] {
       open = i + 1;
       what = `${t.value}()`;
     } else if (
-      (NETWORK_CALLS.has(t.value) || ["http", "https", "navigator", "xhr", "client", "api"].includes(t.value)) &&
+      (NETWORK_CALLS.has(t.value) || ["http", "https", "navigator", "xhr", "client", "api"].includes(t.value) || /(^ws|socket|websocket|channel|peer|conn(ection)?)$/i.test(t.value)) &&
       tokens[i + 1].value === "." &&
       NETWORK_METHODS.has(tokens[i + 2]?.value ?? "") &&
       tokens[i + 3]?.value === "("

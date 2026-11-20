@@ -1,0 +1,5 @@
+// expect: MS020
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export circuit mint(a: Uint<64>, to: UserAddress): [] { mintUnshieldedToken(pad(32, "b:tok:"), disclose(a), right<ContractAddress, UserAddress>(disclose(to))); }

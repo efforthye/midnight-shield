@@ -250,3 +250,81 @@ export circuit reveal(v: Uint<64>): [] {
 }`, "MS011"));
   });
 });
+
+const C = (body: string) => `${HEADER}
+export ledger round: Uint<32>;
+export ledger total: Field;
+export ledger used: Set<Bytes<32>>;
+export ledger tree: MerkleTree<10, Bytes<32>>;
+export ledger owner: Bytes<32>;
+witness secretKey(): Bytes<32>;
+witness nonce(): Bytes<32>;
+export circuit idOf(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "t:id:"), sk]);
+}
+${body}`;
+
+describe("MS015–MS032", () => {
+  const cases: [string, string, string][] = [
+    // rule, flagged, not flagged
+    ["MS015", `witness unusedThing(): Field;\nexport circuit f(): [] { assert(idOf(secretKey()) == owner, "x"); }`, `export circuit f(): [] { assert(idOf(secretKey()) == owner, "x"); const n = nonce(); }`],
+    ["MS016", `circuit helper(): Field { return 1; }`, `circuit helper(): Field { return 1; }\nexport circuit f(): Field { return helper(); }`],
+    ["MS017", `export circuit f(x: Uint<8>): [] { assert(disclose(x) >= 0, "x"); }`, `export circuit f(x: Uint<8>): [] { assert(disclose(x) > 0, "x"); }`],
+    ["MS018", `export circuit f(): [] { used.insert(disclose(idOf(secretKey()))); }`, `export circuit f(): [] { const n = disclose(idOf(secretKey())); assert(!used.member(n), "x"); used.insert(n); }`],
+    ["MS019", `export circuit f(a: Uint<64>, to: UserAddress): [] { sendUnshielded(default<Bytes<32>>, disclose(a) as Uint<128>, right<ContractAddress, UserAddress>(disclose(to))); }`, `export circuit f(a: Uint<64>, to: UserAddress): [] { assert(idOf(secretKey()) == owner, "x"); sendUnshielded(default<Bytes<32>>, disclose(a) as Uint<128>, right<ContractAddress, UserAddress>(disclose(to))); }`],
+    ["MS020", `export circuit f(a: Uint<64>, to: UserAddress): [] { mintUnshieldedToken(pad(32, "t:"), disclose(a), right<ContractAddress, UserAddress>(disclose(to))); }`, `export circuit _f(a: Uint<64>, to: UserAddress): [] { mintUnshieldedToken(pad(32, "t:"), disclose(a), right<ContractAddress, UserAddress>(disclose(to))); }`],
+    ["MS021", `export circuit j(): [] { tree.insert(disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "t:m:"), secretKey()]))); }\nexport circuit v(): [] { const n = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "t:m:"), secretKey()])); assert(!used.member(n), "x"); used.insert(n); }`, `export circuit j(): [] { tree.insert(disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "t:m:"), secretKey()]))); }\nexport circuit v(): [] { const n = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "t:n:"), secretKey()])); assert(!used.member(n), "x"); used.insert(n); }`],
+    ["MS022", `export circuit f(round: Uint<32>): [] { assert(disclose(round) > 0, "x"); }`, `export circuit f(r: Uint<32>): [] { assert(disclose(r) > 0, "x"); }`],
+    ["MS023", `export circuit f(v: Uint<8>): [] { owner = disclose(persistentCommit<Uint<8>>(v, secretKey())); assert(true || false, "x"); }`, `export circuit f(v: Uint<8>): [] { assert(idOf(secretKey()) == owner, "x"); owner = disclose(persistentCommit<Uint<8>>(v, nonce())); }`],
+    ["MS024", `export circuit f(): [] { if (true) { round = 1; } }`, `export circuit f(x: Boolean): [] { if (disclose(x)) { round = 1; } else { assert(false, "rejected"); } }`],
+    ["MS025", `export circuit f(): [] { round = 1; round = 2; }`, `export circuit f(): [] { round = 1; round = round + 1; }`],
+    ["MS026", `export circuit f(pad: Field): Field { return pad; }`, `export circuit f(p: Field): Field { return p; }`],
+    ["MS027", `export circuit f(): [] { used.member(disclose(idOf(secretKey()))); }`, `export circuit f(): [] { assert(used.member(disclose(idOf(secretKey()))), "x"); }`],
+    ["MS029", `export circuit f(r: Uint<32>): [] { disclose(r) == round; }`, `export circuit f(r: Uint<32>): [] { assert(disclose(r) == round, "x"); }`],
+    ["MS031", `export circuit f(a: Field): [] { total = total + disclose(a); }`, `export circuit f(a: Field): [] { total = disclose(a); }`],
+    ["MS032", `export circuit f(): [] { const x = idOf(secretKey()); }`, `export circuit f(): [] { const x = idOf(secretKey()); assert(x == owner, "x"); }`],
+  ];
+  for (const [id, bad, good] of cases) {
+    it(`${id}: flags the vulnerable case and not the safe one`, () => {
+      assert.ok(has(C(bad), id), `${id} missed:\n${bad}`);
+      assert.ok(!has(C(good), id), `${id} false positive:\n${good}`);
+    });
+  }
+
+  it("MS028: flags receiving without any send, not a contract that can pay out", () => {
+    const recv = `export circuit d(c: ShieldedCoinInfo): [] { receiveShielded(disclose(c)); }`;
+    assert.ok(has(C(recv), "MS028"));
+    assert.ok(!has(C(`${recv}\nexport circuit w(i: QualifiedShieldedCoinInfo, k: ZswapCoinPublicKey, v: Uint<128>): [] { assert(idOf(secretKey()) == owner, "x"); sendShielded(disclose(i), left<ZswapCoinPublicKey, ContractAddress>(disclose(k)), disclose(v)); }`), "MS028"));
+  });
+
+  it("MS030: flags invisible direction characters in Compact and TypeScript", () => {
+    assert.ok(has(C(`// admin only ‮ } ⁦ if (isAdmin) ⁩ ⁦ begin`), "MS030"));
+    assert.ok(has(`const ok = true; // ⁧ check ⁩`, "MS030", "a.ts"));
+    assert.ok(!has(`const ok = true; // 안녕하세요 مرحبا`, "MS030", "a.ts"));
+  });
+
+  it("MS011: an owner field nobody checks yet is still caught, with low confidence", () => {
+    const f = lintSource(C(`export circuit setOwner(k: Bytes<32>): [] { owner = disclose(k); }`), "c.compact").find((x) => x.ruleId === "MS011");
+    assert.equal(f?.confidence, "low");
+  });
+});
+
+describe("MS107–MS112", () => {
+  const cases: [string, string, string][] = [
+    ["MS107", `new https.Agent({ rejectUnauthorized: false });`, `new https.Agent({ rejectUnauthorized: true });`],
+    ["MS107", `process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";`, `process.env.NODE_TLS_REJECT_UNAUTHORIZED = "1";`],
+    ["MS108", `eval(code);`, `redis.eval(script);`],
+    ["MS108", `const f = new Function("a", body);`, `const f = function () {};`],
+    ["MS109", `const indexerUri = "http://indexer.example.com/api";`, `const indexerUri = "https://indexer.example.com/api";`],
+    ["MS109", `const nodeWs = "ws://rpc.example.org";`, `const nodeWs = "ws://localhost:9944";`],
+    ["MS110", "throw new Error(`bad seed ${seed}`);", "throw new Error(`Set ${seedEnv} in .env`);"],
+    ["MS111", `fs.writeFileSync(file, seed);`, `fs.writeFileSync(file, seed, { mode: 0o600 });`],
+    ["MS112", `win.postMessage(data, "*");`, `win.postMessage(data, "https://app.example.com");`],
+  ];
+  for (const [id, bad, good] of cases) {
+    it(`${id}: ${bad}`, () => {
+      assert.ok(has(bad, id, "a.ts"), `${id} missed: ${bad}`);
+      assert.ok(!has(good, id, "a.ts"), `${id} false positive: ${good}`);
+    });
+  }
+});

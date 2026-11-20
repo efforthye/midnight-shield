@@ -1,0 +1,5 @@
+// expect: MS017
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export circuit f(a: Uint<64>): [] { assert(disclose(a) >= 0, "neg"); }

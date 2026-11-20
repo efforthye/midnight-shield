@@ -1,0 +1,11 @@
+// expect: MS014
+// note: randomness from a circuit parameter, disclosed in the same circuit
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger c: Bytes<32>;
+export ledger s: Bytes<32>;
+export circuit bid(v: Uint<64>, r: Bytes<32>): [] {
+  c = disclose(persistentCommit<Uint<64>>(v, r));
+  s = disclose(r);
+}

@@ -1,0 +1,10 @@
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+// MS028: the contract accepts deposits, but no circuit can send tokens out.
+export ledger deposits: Counter;
+
+export circuit deposit(coin: ShieldedCoinInfo): [] {
+  receiveShielded(disclose(coin));
+  deposits.increment(1);
+}

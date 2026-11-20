@@ -1,0 +1,11 @@
+// expect: MS013
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger n: Counter;
+witness allowed(): Boolean;
+export circuit reset(): [] {
+  const ok = allowed();
+  assert(disclose(ok == true), "no");
+  n.resetToDefault();
+}

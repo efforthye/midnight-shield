@@ -1,0 +1,12 @@
+// expect: MS007
+// note: secret placed in a struct that is written to the ledger
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+struct Entry { id: Bytes<32>, amount: Uint<64> }
+export ledger last: Entry;
+witness localSecretKey(): Bytes<32>;
+export circuit f(a: Uint<64>): [] {
+  const e = Entry { id: disclose(localSecretKey()), amount: disclose(a) };
+  last = e;
+}

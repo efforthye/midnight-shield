@@ -19,6 +19,13 @@ export ledger reactions: Set<Bytes<32>>;
 export ledger cachedId: Field;
 export ledger sealedBid: Bytes<32>;
 export ledger revealedSalt: Bytes<32>;
+export ledger spentNotes: Set<Bytes<32>>;
+export ledger voters: MerkleTree<10, Bytes<32>>;
+export ledger voteNullifiers: Set<Bytes<32>>;
+export ledger choiceCommitment: Bytes<32>;
+export ledger round: Uint<32>;
+export ledger phase: Uint<8>;
+export ledger reserve: Field;
 
 witness secretKey(): Bytes<32>;
 witness myChoice(): Uint<8>;
@@ -129,3 +136,97 @@ export circuit placeBid(amount: Uint<64>): [] {
 export circuit publishSalt(): [] {
   revealedSalt = disclose(bidRandomness());
 }
+
+// MS016: not exported and never called.
+circuit oldHelper(x: Field): Field {
+  return x;
+}
+
+// MS017: an unsigned amount is always >= 0, so this assert checks nothing.
+export circuit checkAmount(amount: Uint<64>): [] {
+  assert(disclose(amount) >= 0, "negative amount");
+}
+
+// MS018: no check that the note was not spent before, so it can be spent again.
+export circuit spend(): [] {
+  spentNotes.insert(disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:spent:"), secretKey()])));
+}
+
+// MS019: anyone can call this and send the contract's tokens anywhere.
+export circuit payout(amount: Uint<64>, to: UserAddress): [] {
+  sendUnshielded(default<Bytes<32>>, disclose(amount) as Uint<128>, right<ContractAddress, UserAddress>(disclose(to)));
+}
+
+// MS020: anyone can mint any amount.
+export circuit mint(amount: Uint<64>, to: UserAddress): [] {
+  mintUnshieldedToken(pad(32, "example:token:"), disclose(amount), right<ContractAddress, UserAddress>(disclose(to)));
+}
+
+// MS021: the nullifier is the same hash as the voter's leaf, so a vote reveals the voter.
+export circuit joinVoters(): [] {
+  voters.insert(disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:voter:"), secretKey()])));
+}
+
+export circuit castVote(): [] {
+  const n = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:voter:"), secretKey()]));
+  assert(!voteNullifiers.member(n), "already voted");
+  voteNullifiers.insert(n);
+}
+
+// MS022: the parameter hides the ledger field 'balance'.
+export circuit deposit(balance: Uint<64>): [] {
+  assert(disclose(balance) > 0, "empty deposit");
+}
+
+// MS023: the secret key is the commitment randomness; opening the commitment reveals it.
+export circuit commitChoice(): [] {
+  choiceCommitment = disclose(persistentCommit<Uint<8>>(myChoice(), secretKey()));
+}
+
+// MS024: the condition is a constant, so the check below never runs.
+export circuit closeRound(): [] {
+  if (false) {
+    assert(round > 0, "no round");
+  }
+  round = round + 1;
+}
+
+// MS025: 'phase' is written twice; the first write has no effect.
+export circuit advance(): [] {
+  phase = 1;
+  phase = 2;
+}
+
+// MS026: this parameter hides the standard-library disclose().
+export circuit echo(disclose: Uint<8>): Uint<8> {
+  return disclose;
+}
+
+// MS027: the result of the membership check is thrown away.
+export circuit vote2(): [] {
+  const n = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:ballot2:"), secretKey()]));
+  ballots.member(n);
+  ballots.insert(n);
+}
+
+// MS028: tokens come in, but no circuit can send them out.
+// (The contract does send in payout(), so MS028 is shown in examples/locked.compact.)
+
+// MS029: a comparison with no assert around it.
+export circuit checkRound(r: Uint<32>): [] {
+  disclose(r) == round;
+}
+
+// MS031: Field arithmetic wraps around instead of failing.
+export circuit withdrawReserve(amount: Field): [] {
+  reserve = reserve - disclose(amount);
+}
+
+// MS032: computed and never used.
+export circuit audit(): [] {
+  const expected = persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:audit:"), pad(32, "x")]);
+  assert(round > 0, "no round");
+}
+
+// MS015: declared but never used.
+witness unusedNonce(): Bytes<32>;

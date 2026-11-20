@@ -1,0 +1,17 @@
+// expect: MS008
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger members: MerkleTree<10, Bytes<32>>;
+export ledger counter: Counter;
+witness secretKey(): Bytes<32>;
+witness path(): MerkleTreePath<10, Bytes<32>>;
+export circuit leaf(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:leaf:"), sk]);
+}
+export circuit claim(): [] {
+  const p = path();
+  assert(disclose(p.leaf == leaf(secretKey())), "not yours");
+  assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(p))), "not a member");
+  counter.increment(1);
+}

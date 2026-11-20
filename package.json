@@ -56,7 +56,8 @@
     "demo": "node dist/src/cli.js examples/",
     "playground": "node scripts/build-playground.mjs",
     "prepublishOnly": "npm test",
-    "version": "node scripts/release-version.mjs && git add src/reporters.ts CHANGELOG.md"
+    "version": "node scripts/release-version.mjs && git add src/reporters.ts CHANGELOG.md",
+    "bench": "npm run build && node scripts/bench.mjs"
   },
   "publishConfig": {
     "access": "public",

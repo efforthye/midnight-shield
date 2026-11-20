@@ -7,6 +7,7 @@ import { runCustomRule, type CustomRule } from "./plugins.js";
 import { isSdkFile, isTestFile, lintSdkSource } from "./sdk.js";
 import { checkAuthWrites } from "./auth-writes.js";
 import { checkStructural } from "./structural.js";
+import { checkContract } from "./contract-checks.js";
 import { suggestFix, type Suggestion } from "./suggest.js";
 import { CONFIDENCE_ORDER, RULES_BY_ID, SEVERITY_ORDER, ruleDocUrl, type Confidence, type RuleMeta, type Severity } from "./rules.js";
 
@@ -121,12 +122,30 @@ interface Analysis {
   raw: RawFinding[];
 }
 
+/** MS030: invisible bidirectional-control characters that make code read differently from how it runs (Trojan Source). */
+function bidiCharacters(source: string): RawFinding[] {
+  const out: RawFinding[] = [];
+  const lines = source.split(/\r?\n/);
+  lines.forEach((l, i) => {
+    const m = /[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C]/.exec(l);
+    if (!m) return;
+    out.push({
+      ruleId: "MS030",
+      severity: "high",
+      confidence: "high",
+      loc: { line: i + 1, col: m.index + 1 },
+      message: `This line contains an invisible text-direction character (U+${m[0].charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}). It can make the code look different from what the compiler sees, for example hiding a check inside a comment (the "Trojan Source" attack). Remove it.`,
+    });
+  });
+  return out;
+}
+
 function analyze(source: string, file: string, options: LintOptions): Analysis {
-  if (isSdkFile(file)) return { raw: isTestFile(file) ? [] : lintSdkSource(source) };
+  if (isSdkFile(file)) return { raw: isTestFile(file) ? [] : [...lintSdkSource(source), ...bidiCharacters(source)] };
   const program = parse(source);
   const analyzer = new Analyzer(program, options.resolver, options.absolutePath);
   const raw = analyzer.run();
-  raw.push(...checkAuthWrites(program), ...checkStructural(program));
+  raw.push(...checkAuthWrites(program), ...checkStructural(program), ...checkContract(program), ...bidiCharacters(source));
   for (const rule of options.plugins ?? []) raw.push(...runCustomRule(rule, file, source, program));
   return { program, analyzer, raw };
 }

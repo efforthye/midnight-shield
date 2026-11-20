@@ -1,0 +1,6 @@
+// expect: none
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger allowed: Set<Bytes<32>>;
+export circuit f(n: Bytes<32>): [] { assert(allowed.member(disclose(n)), "not allowed"); }

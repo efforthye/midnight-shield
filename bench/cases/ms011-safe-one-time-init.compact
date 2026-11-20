@@ -1,0 +1,19 @@
+// expect: none
+// note: owner settable only once
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger ownerId: Bytes<32>;
+export ledger initialized: Boolean;
+witness secretKey(): Bytes<32>;
+export circuit deriveId(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:owner:"), sk]);
+}
+export circuit init(): [] {
+  assert(!initialized, "already initialized");
+  ownerId = disclose(deriveId(secretKey()));
+  initialized = true;
+}
+export circuit withdraw(): [] {
+  assert(deriveId(secretKey()) == ownerId, "not the owner");
+}

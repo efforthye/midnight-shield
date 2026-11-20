@@ -1,0 +1,7 @@
+// expect: MS027
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger limit: Uint<64>;
+circuit isValid(a: Uint<64>): Boolean { return a <= limit; }
+export circuit f(a: Uint<64>): [] { isValid(disclose(a)); }

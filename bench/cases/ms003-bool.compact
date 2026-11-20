@@ -1,0 +1,9 @@
+// expect: MS003
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger voteHash: Bytes<32>;
+witness myVote(): Boolean;
+export circuit vote(): [] {
+  voteHash = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:vote:"), myVote() ? pad(32, "yes") : pad(32, "no")]));
+}

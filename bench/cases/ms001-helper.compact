@@ -1,0 +1,11 @@
+// expect: MS001
+// note: ownPublicKey() through a helper
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger owner: ZswapCoinPublicKey;
+constructor() { owner = ownPublicKey(); }
+circuit caller(): ZswapCoinPublicKey { return ownPublicKey(); }
+export circuit withdraw(): [] {
+  assert(caller() == owner, "not the owner");
+}

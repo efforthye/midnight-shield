@@ -4,14 +4,15 @@ import { lintFiles } from "../src/node.js";
 import { formatMarkdown, formatText } from "../src/reporters.js";
 import { suggestFix, suggestionDiff } from "../src/suggest.js";
 
-const findings = lintFiles(["examples/vulnerable.compact", "examples/dapp/vulnerable.ts"]);
+const findings = lintFiles(["examples/vulnerable.compact", "examples/locked.compact", "examples/dapp/vulnerable.ts", "examples/dapp/BackupPhrase.tsx"]);
 
 describe("suggested fixes", () => {
   it("every finding in the examples gets a suggestion that changes the code", () => {
     for (const f of findings) {
       assert.ok(f.suggestion, `${f.ruleId} has no suggestion`);
       const diff = suggestionDiff(f.suggestion);
-      assert.ok(diff.some((d) => d.kind === "+"), `${f.ruleId} suggestion adds nothing`);
+      // removing dead code is a change too (MS015, MS016)
+      assert.ok(diff.some((d) => d.kind !== " "), `${f.ruleId} suggestion changes nothing`);
     }
   });
 

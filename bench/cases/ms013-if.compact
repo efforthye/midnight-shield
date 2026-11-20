@@ -1,0 +1,12 @@
+// expect: MS013
+// note: witness Boolean in an if instead of an assert
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger n: Counter;
+witness isAdmin(): Boolean;
+export circuit reset(): [] {
+  if (disclose(isAdmin())) {
+    n.resetToDefault();
+  }
+}

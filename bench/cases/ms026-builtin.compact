@@ -1,0 +1,5 @@
+// expect: MS026
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export circuit f(pad: Uint<8>): Uint<8> { return pad; }

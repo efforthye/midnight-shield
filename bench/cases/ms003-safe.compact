@@ -1,0 +1,10 @@
+// expect: none
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger voteCommit: Bytes<32>;
+witness myVote(): Uint<8>;
+witness randomness(): Bytes<32>;
+export circuit vote(): [] {
+  voteCommit = disclose(persistentCommit<Uint<8>>(myVote(), randomness()));
+}

@@ -1,0 +1,7 @@
+// expect: MS011
+// note: owner field never compared anywhere
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger owner: Bytes<32>;
+export circuit setOwner(k: Bytes<32>): [] { owner = disclose(k); }

@@ -4,5 +4,35 @@
     "rule": "MS104",
     "file": "examples/leaderboard/ui/src/contexts/BrowserLeaderboardManager.ts",
     "reason": "Confirmed real: the example keeps the player's raw secret key in localStorage (its own comment says so). Any script running on the page can read it and prove ownership of that player's leaderboard entries."
+  },
+  {
+    "corpus": "midnight-examples",
+    "rule": "MS019",
+    "file": "examples/token-transfers/contract/token-transfers.compact",
+    "reason": "Confirmed: sendNightTokensToUser and sendShieldedToUser have no check, so anyone can send the contract's tokens to any address. Deliberate in this demo of token transfers, but it is exactly what the rule describes."
+  },
+  {
+    "corpus": "midnight-examples",
+    "rule": "MS020",
+    "file": "examples/private-tip-jar/contract/tip-token.compact",
+    "reason": "Confirmed: mint has no check, so anyone can mint the demo token. Deliberate for a test token."
+  },
+  {
+    "corpus": "midnight-examples",
+    "rule": "MS020",
+    "file": "packages/mnkit/test/fixtures/private-tip-jar/contract/tip-token.compact",
+    "reason": "Same contract as examples/private-tip-jar (a test fixture copy)."
+  },
+  {
+    "corpus": "compact-contracts",
+    "rule": "MS019",
+    "file": "contracts/src/multisig/test/mocks/MockUnshieldedTreasury.compact",
+    "reason": "Confirmed: sendRaw bypasses the treasury's checks on purpose, as its doc comment says; a test mock."
+  },
+  {
+    "corpus": "midnight-examples",
+    "rule": "MS020",
+    "file": "examples/token-transfers/contract/token-transfers.compact",
+    "reason": "Confirmed: the mint circuits have no check, so anyone can mint the demo token (mintAndSendShielded also sends the new coins to any key). Deliberate in this demo of token operations."
   }
 ]
