@@ -1,6 +1,6 @@
 {
   "name": "midnight-shield",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Static analyzer for Midnight Compact contracts. Finds security and privacy issues before deploy.",
   "type": "module",
   "bin": {
@@ -12,13 +12,16 @@
     "dist/src",
     "docs",
     "skills",
-    "action.yml"
+    "action.yml",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepare": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist/test/rules.test.js",
-    "demo": "node dist/src/cli.js examples/"
+    "test": "npm run build && node scripts/run-tests.mjs",
+    "coverage": "npm run build && node scripts/run-tests.mjs --experimental-test-coverage",
+    "demo": "node dist/src/cli.js examples/",
+    "verify": "npm run build && node scripts/verify-corpus.mjs"
   },
   "engines": {
     "node": ">=20"
