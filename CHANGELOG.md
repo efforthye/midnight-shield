@@ -9,9 +9,14 @@ All notable changes to this project are documented here. The format follows [Kee
 - **Privacy diff on pull requests.** `midnight-shield snapshot` saves findings and the disclosure map; `midnight-shield diff base.json head.json` shows what a change newly makes public, protections that got weaker, and new and fixed findings (`--format text|markdown|json`, `--fail-on` for new findings only). The GitHub Action comments it on every pull request and updates the same comment as you push (`pr-comment`, on by default).
 - **Status badge.** `--badge <file>` writes a shields.io endpoint badge with the logo: green `verified` when the scan is clean, otherwise the most severe counts in red (critical, high), orange (medium) or yellow (low). The GitHub Action publishes it on pushes to the default branch with `badge: true`.
 - **Suggested fixes.** Each finding comes with the flagged line rewritten, shown as a diff in the terminal, the Markdown report, JSON and the playground (with a Copy fix button). `--no-suggestions` hides them.
-- **MS011 unguarded-auth-update**: an exported circuit changes an owner key or an admin allow-list without checking the caller.
+- **MS011 unguarded-auth-update**: an exported circuit changes an owner key or an admin allow-list without checking the caller. Opening a commitment (commit-reveal) is not taken as a caller check.
 - **MS103 hardcoded-secret**: a seed, secret key or recovery phrase written into DApp source.
 - **MS104 private-state-in-browser-storage**: private state or a secret saved to `localStorage` or `sessionStorage`.
+- **MS012 transient-hash-in-state**: a `transientHash` / `transientCommit` result stored in the ledger, which Midnight does not guarantee to stay the same across upgrades.
+- **MS013 witness-controlled-assert**: an `assert` that only checks a `Boolean` returned by a witness.
+- **MS014 commitment-randomness-disclosed**: the randomness of a commitment made public outside a commit-reveal opening.
+- **MS105 insecure-randomness**: a secret, seed, nonce or salt made with `Math.random()`.
+- **MS106 secret-sent-over-network**: a seed or secret key sent with `fetch`, `axios` or another HTTP client.
 - Corpus verification accepts findings confirmed by hand in `verify/reviewed.json`. The first one: the official leaderboard example keeps the player's secret key in `localStorage` (MS104).
 
 ## [0.5.0] - 2026-11-20

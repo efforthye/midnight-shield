@@ -10,8 +10,8 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 [![CI](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
-![Rules](https://img.shields.io/badge/rules-15-purple)
-![Tests](https://img.shields.io/badge/tests-148%20passing-brightgreen)
+![Rules](https://img.shields.io/badge/rules-20-purple)
+![Tests](https://img.shields.io/badge/tests-159%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
 
@@ -26,14 +26,6 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 </div>
 
 ---
-
-## What's new
-
-- 🔁 **[Privacy diff on pull requests](#privacy-diff)**: the GitHub Action comments what a change newly makes public, and which findings it adds or fixes.
-- 🏷️ **[Status badge](#status-badge)** for your README: `verified` when clean, otherwise the number of findings in red, orange or yellow.
-- 🩹 **[Suggested fixes](#3-fix-and-scan-again)**: every finding shows the flagged line rewritten, as a diff you can copy.
-- 🧩 **[3 new rules](#rules)**: [MS011](docs/rules/MS011.md) owner change without a caller check, [MS103](docs/rules/MS103.md) seed in the source, [MS104](docs/rules/MS104.md) private state in `localStorage`.
-- 🌐 **[Scan a whole repository](#web-playground)** in the playground, or open a local folder.
 
 ## Why Midnight Shield?
 
@@ -54,6 +46,11 @@ The Compact compiler already stops you from disclosing witness data by accident.
 | Wallet seed in a log | The seed ends up in CI logs and crash reports | [MS102](docs/rules/MS102.md) |
 | Wallet seed in the source | Anyone who reads the repo or the web bundle can use it | [MS103](docs/rules/MS103.md) |
 | Private state in `localStorage` | Any script on the page can read users' private data | [MS104](docs/rules/MS104.md) |
+| `assert(isAdmin())` on a witness | The prover answers the witness, so anyone passes the check | [MS013](docs/rules/MS013.md) |
+| Commitment randomness made public | Anyone can open the commitment by trying values | [MS014](docs/rules/MS014.md) |
+| `transientHash` stored in the ledger | Stored values may stop matching after an upgrade | [MS012](docs/rules/MS012.md) |
+| `Math.random()` for a salt or nonce | The value can be predicted | [MS105](docs/rules/MS105.md) |
+| Seed sent to a server with `fetch` | The server, proxies and logs can read it | [MS106](docs/rules/MS106.md) |
 
 Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint** is to Noir: a static analyzer that catches issues before deploy, with rules built around Midnight's privacy model.
 
@@ -227,6 +224,9 @@ npx midnight-shield contracts/ --format json                    # scripts and AI
 | [MS009](docs/rules/MS009.md) | `unbound-merkle-path` | 🔴 High | high | Merkle root checked, but the path's leaf is never tied to the caller |
 | [MS010](docs/rules/MS010.md) | `linkable-ledger-update` | 🟡 Medium | medium | In an anonymous-membership contract, the same secret-derived tag is published by several circuits |
 | [MS011](docs/rules/MS011.md) | `unguarded-auth-update` | 🔴 High | medium | An exported circuit changes an owner key or admin set without checking the caller |
+| [MS012](docs/rules/MS012.md) | `transient-hash-in-state` | 🟡 Medium | high | A `transientHash` / `transientCommit` result stored in the ledger |
+| [MS013](docs/rules/MS013.md) | `witness-controlled-assert` | 🔴 High | high | An `assert` that only checks a `Boolean` the prover supplies through a witness |
+| [MS014](docs/rules/MS014.md) | `commitment-randomness-disclosed` | 🔴 High | medium | The randomness of a commitment made public outside a commit-reveal opening |
 
 **DApp code (TypeScript / JavaScript)**
 
@@ -236,6 +236,8 @@ npx midnight-shield contracts/ --format json                    # scripts and AI
 | [MS102](docs/rules/MS102.md) | `secret-in-log` | 🔴 High | medium | A seed, secret key or password passed to a log call |
 | [MS103](docs/rules/MS103.md) | `hardcoded-secret` | 🟣 Critical | medium | A seed, secret key or recovery phrase written into the source |
 | [MS104](docs/rules/MS104.md) | `private-state-in-browser-storage` | 🔴 High | medium | Private state or a secret saved to `localStorage` / `sessionStorage` |
+| [MS105](docs/rules/MS105.md) | `insecure-randomness` | 🔴 High | medium | A secret, seed, nonce or salt made with `Math.random()` |
+| [MS106](docs/rules/MS106.md) | `secret-sent-over-network` | 🔴 High | medium | A seed or secret key sent with `fetch`, `axios` or another HTTP client |
 
 Need a rule for your own conventions? [Write a plugin](docs/custom-rules.md).
 
@@ -409,7 +411,7 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 
 | Check | What it proves | Command |
 | --- | --- | --- |
-| **Unit and integration tests** (148 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
+| **Unit and integration tests** (159 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
 | **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is a confirmed one listed in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |
@@ -424,7 +426,7 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 - [x] **v0.3** Merkle and secret rules, corpus verification, real-compiler CI
 - [x] **v0.4** Disclosure map, confidence, baselines, Markdown, plugins, autofix, TypeScript checks, playground, VS Code extension, npm package
 - [x] **v0.5** Repository and folder scanning in the playground, project logo, GitHub Packages
-- [x] **Next** Privacy diff on pull requests, status badge, suggested fixes, MS011 / MS103 / MS104
+- [x] **Next** Privacy diff on pull requests, status badge, suggested fixes, MS011–MS014 / MS103–MS106
 - [ ] VS Code Marketplace release
 - [ ] Data-flow facts for plugins
 - [ ] More rules from community feedback
