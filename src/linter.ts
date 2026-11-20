@@ -1,6 +1,7 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
-import { Analyzer } from "./analyzer.js";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
+import { Analyzer, type ImportResolver } from "./analyzer.js";
+import type { Program } from "./ast.js";
 import { lex } from "./lexer.js";
 import { parse } from "./parser.js";
 import { RULES_BY_ID, SEVERITY_ORDER, ruleDocUrl, type Severity } from "./rules.js";
@@ -14,6 +15,8 @@ export interface Finding {
   line: number;
   col: number;
   docUrl: string;
+  /** the source line the finding points at */
+  snippet: string;
 }
 
 export interface LintOptions {
@@ -21,6 +24,12 @@ export interface LintOptions {
   disable?: string[];
   /** only report findings at or above this severity */
   minSeverity?: Severity;
+  /** glob patterns of files to skip, e.g. "**\/test/**" */
+  ignore?: string[];
+  /** resolves `import "path"` so imported circuits are followed */
+  resolver?: ImportResolver;
+  /** absolute path of the file, used to resolve relative imports */
+  absolutePath?: string;
 }
 
 const DIRECTIVE = /shield-disable(-next-line|-line|-file)?\b([^\n]*)/;
@@ -61,7 +70,8 @@ function isSuppressed(s: Suppressions, ruleId: string, line: number): boolean {
 
 export function lintSource(source: string, file = "contract.compact", options: LintOptions = {}): Finding[] {
   const program = parse(source);
-  const raw = new Analyzer(program).run();
+  const raw = new Analyzer(program, options.resolver, options.absolutePath).run();
+  const lines = source.split(/\r?\n/);
   const suppressions = collectSuppressions(source);
   const disabled = new Set(options.disable ?? []);
   const minRank = SEVERITY_ORDER.indexOf(options.minSeverity ?? "info");
@@ -79,6 +89,7 @@ export function lintSource(source: string, file = "contract.compact", options: L
       line: f.loc.line,
       col: f.loc.col,
       docUrl: ruleDocUrl(f.ruleId),
+      snippet: lines[f.loc.line - 1] ?? "",
     }))
     .sort((a, b) => a.line - b.line || a.col - b.col);
 }
@@ -102,11 +113,56 @@ export function findCompactFiles(paths: string[]): string[] {
   return out;
 }
 
+/** Resolve imports from disk, relative to the importing file. Parsed files are cached. */
+export function fileImportResolver(): ImportResolver {
+  const cache = new Map<string, Program | null>();
+  return (fromFile, target) => {
+    const base = fromFile ? dirname(fromFile) : process.cwd();
+    for (const candidate of [`${target}.compact`, target]) {
+      const abs = resolve(base, candidate);
+      if (!cache.has(abs)) {
+        cache.set(abs, existsSync(abs) && statSync(abs).isFile() ? parse(readFileSync(abs, "utf8")) : null);
+      }
+      const program = cache.get(abs);
+      if (program) return { file: abs, program };
+    }
+    return undefined;
+  };
+}
+
+/** Convert a glob (`*`, `**`, `?`) to a RegExp matched against forward-slash paths. */
+export function globToRegExp(glob: string): RegExp {
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*") {
+      if (glob[i + 1] === "*") {
+        re += ".*";
+        i++;
+        if (glob[i + 1] === "/") i++;
+      } else re += "[^/]*";
+    } else if (c === "?") re += "[^/]";
+    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${re}$`);
+}
+
+/** The .compact files that will be scanned: found under `paths`, minus `ignore` globs. */
+export function listTargetFiles(paths: string[], ignore: string[] = [], cwd = process.cwd()): string[] {
+  const res = ignore.map(globToRegExp);
+  return findCompactFiles(paths).filter((file) => {
+    const rel = relative(cwd, file).split("\\").join("/");
+    return !res.some((re) => re.test(rel));
+  });
+}
+
 export function lintFiles(paths: string[], options: LintOptions = {}, cwd = process.cwd()): Finding[] {
   const findings: Finding[] = [];
-  for (const file of findCompactFiles(paths)) {
+  const resolver = options.resolver ?? fileImportResolver();
+  for (const file of listTargetFiles(paths, options.ignore, cwd)) {
+    const rel = relative(cwd, file).split("\\").join("/");
     const source = readFileSync(file, "utf8");
-    findings.push(...lintSource(source, relative(cwd, file).split("\\").join("/"), options));
+    findings.push(...lintSource(source, rel, { ...options, resolver, absolutePath: resolve(file) }));
   }
   return findings;
 }
