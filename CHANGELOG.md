@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-11-20
+
+### Changed
+
+- Releases are published from GitHub Actions with npm Trusted Publishing (OIDC) and provenance. No npm token is stored in the repository.
+- Playground: cleaner finding cards, Pretendard for text and JetBrains Mono (without ligatures) for code.
+- README: install options and a web playground section with screenshots.
+
 ## [0.4.0] - 2026-11-20
 
 ### Added

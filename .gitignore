@@ -160,3 +160,4 @@ vite.config.ts.timestamp-*
 playground/examples.generated.ts
 *.tgz
 vscode/*.vsix
+Claude outputs/

@@ -1,7 +1,7 @@
 import type { DisclosureEntry, Finding } from "./linter.js";
 import { RULES, SEVERITY_ORDER, ruleDocUrl, type RuleMeta, type Severity } from "./rules.js";
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.4.1";
 
 const COLORS: Record<Severity, string> = {
   critical: "\x1b[35m",
