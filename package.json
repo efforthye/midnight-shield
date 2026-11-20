@@ -1,0 +1,43 @@
+{
+  "name": "midnight-shield",
+  "version": "0.1.0",
+  "description": "Static analyzer for Midnight Compact contracts. Finds security and privacy issues before deploy.",
+  "type": "module",
+  "bin": {
+    "midnight-shield": "dist/src/cli.js"
+  },
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "files": [
+    "dist/src",
+    "docs",
+    "action.yml"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/rules.test.js",
+    "demo": "node dist/src/cli.js examples/"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "midnight",
+    "compact",
+    "zero-knowledge",
+    "linter",
+    "static-analysis",
+    "privacy",
+    "security"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/efforthye/midnight-shield.git"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}
