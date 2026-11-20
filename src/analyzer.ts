@@ -7,13 +7,30 @@
 // circuits are followed. Rules hook into this walk.
 
 import type { Decl, Expr, Loc, Param, Program, Stmt, TypeRef } from "./ast.js";
-import { RULES_BY_ID, type Severity } from "./rules.js";
+import { RULES_BY_ID, type Confidence, type Severity } from "./rules.js";
 
 export interface RawFinding {
   ruleId: string;
   severity: Severity;
+  confidence: Confidence;
   message: string;
   loc: Loc;
+}
+
+export type Protection = "raw" | "hash" | "commit" | "public" | "constant";
+
+/** A point where data becomes public: disclose(), a ledger write, or an exported circuit's return value. */
+export interface DisclosureEvent {
+  circuit: string;
+  loc: Loc;
+  via: "disclose" | "ledger write" | "return";
+  /** ledger field written, when known */
+  target?: string;
+  /** private inputs that flow into the public value: "witness:sk", "param:amount" */
+  sources: string[];
+  protection: Protection;
+  /** estimated secret entropy in bits (undefined = unknown or high) */
+  secretBits?: number;
 }
 
 interface Info {
@@ -32,6 +49,10 @@ interface Info {
   /** location of a hash of only low-entropy private values that this value derives from */
   lowHash?: Loc;
   lowHashBits?: number;
+  /** the value is the output of a hash or commitment of private data */
+  protection?: "hash" | "commit";
+  /** MS010: a deterministic identifier derived only from secrets (hash site key) */
+  identity?: string;
   type?: TypeRef;
 }
 
@@ -53,6 +74,9 @@ function unknown(): Info {
 
 function union(infos: Info[]): Info {
   const out = empty();
+  // keep the protection only if every private part shares it
+  const privateParts = infos.filter((i) => isPrivate(i));
+  const prot = privateParts.length && privateParts.every((i) => i.protection === privateParts[0].protection) ? privateParts[0].protection : undefined;
   for (const i of infos) {
     i.sources.forEach((s) => out.sources.add(s));
     i.rawWitness.forEach((s) => out.rawWitness.add(s));
@@ -67,11 +91,13 @@ function union(infos: Info[]): Info {
       out.lowHash = i.lowHash;
       out.lowHashBits = i.lowHashBits;
     }
+    out.identity = out.identity ?? i.identity;
   }
+  out.protection = prot;
   return out;
 }
 
-const SECRET_WORDS = new Set(["sk", "secret", "seed", "mnemonic", "password", "passphrase", "privkey", "pin"]);
+const SECRET_WORDS = new Set(["sk", "secret", "seed", "mnemonic", "password", "passphrase", "privkey"]);
 
 /** Does an identifier look like it names a secret? (`secretKey`, `localSk`, `_secret`, `privateKey`) */
 export function isSecretName(name: string): boolean {
@@ -99,6 +125,8 @@ interface Scope {
 
 interface Frame {
   name: string;
+  /** the top-level circuit is exported (its return value is public) */
+  exported?: boolean;
   scopes: Scope[];
   silent: boolean;
   depth: number;
@@ -156,6 +184,10 @@ export class Analyzer {
   private constrainedWitnesses = new Set<string>();
   private witnessSinks = new Map<string, Loc>();
   private hashSites = new Map<string, { loc: Loc; tagged: boolean; private: boolean }>();
+  /** MS010: identity key -> circuits that publish it (first location per circuit) */
+  private identityUses = new Map<string, Map<string, Loc>>();
+  /** exported circuits that authorize with anonymous Merkle membership */
+  private anonymousCircuits = new Set<string>();
 
   constructor(
     private program: Program,
@@ -240,6 +272,20 @@ export class Analyzer {
       }
     }
 
+    // MS010 only matters where the contract promises anonymity: in account-style
+    // designs a stable identifier (like an address) is linkable by design.
+    for (const uses of this.identityUses.values()) {
+      if (uses.size < 2) continue;
+      if (![...uses.keys()].some((c) => this.anonymousCircuits.has(c))) continue;
+      const entries = [...uses.entries()].sort((a, b) => a[1].line - b[1].line || a[1].col - b[1].col);
+      const names = entries.map(([c]) => `'${c}'`).join(", ");
+      this.report(
+        "MS010",
+        entries[0][1],
+        `The same identifier, derived only from a secret, is published by ${names}. Observers can link these actions to one user. If they should be unlinkable, mix a per-action value (a round, a nonce, or the action name) into the hash.`,
+      );
+    }
+
     for (const [w, loc] of this.witnessSinks) {
       if (!this.constrainedWitnesses.has(w) && this.isFactualWitness(w)) {
         this.report(
@@ -285,7 +331,7 @@ export class Analyzer {
     const vars = new Map<string, Info>();
     for (const p of params) vars.set(p.name, this.paramInfo(p));
     const nullifier: NullifierState = { negMember: false, writes: false, checkedPaths: new Map(), boundPaths: new Set(), rootVars: new Map() };
-    const frame: Frame = { name, scopes: [{ vars }], silent: false, depth: 0, stack: [name], returns: [], commitRand: new Map(), prefix: "", nullifier };
+    const frame: Frame = { name, exported, scopes: [{ vars }], silent: false, depth: 0, stack: [name], returns: [], commitRand: new Map(), prefix: "", nullifier };
     this.execBlock(body, frame);
 
     for (const [path, loc] of nullifier.checkedPaths) {
@@ -297,6 +343,8 @@ export class Analyzer {
         );
       }
     }
+
+    if (exported && nullifier.anonAuth) this.anonymousCircuits.add(name);
 
     if (exported && nullifier.anonAuth && nullifier.writes && !nullifier.negMember) {
       this.report(
@@ -321,12 +369,50 @@ export class Analyzer {
 
   // ---------- reporting ----------
 
-  private report(ruleId: string, loc: Loc, message: string, severity?: Severity): void {
+  private report(ruleId: string, loc: Loc, message: string, severity?: Severity, confidence?: Confidence): void {
     const key = `${ruleId}:${loc.line}:${loc.col}`;
     if (this.seen.has(key)) return;
     this.seen.add(key);
     const meta = RULES_BY_ID.get(ruleId)!;
-    this.findings.push({ ruleId, severity: severity ?? meta.severity, message, loc });
+    this.findings.push({ ruleId, severity: severity ?? meta.severity, confidence: confidence ?? meta.confidence, message, loc });
+  }
+
+  // ---------- disclosure map ----------
+
+  private disclosures = new Map<string, DisclosureEvent>();
+
+  getDisclosures(): DisclosureEvent[] {
+    return [...this.disclosures.values()].sort((a, b) => a.loc.line - b.loc.line || a.loc.col - b.loc.col);
+  }
+
+  private recordDisclosure(info: Info, loc: Loc, frame: Frame, via: DisclosureEvent["via"], target?: string): void {
+    // A disclosed value written to the ledger was already recorded at disclose().
+    if (via === "ledger write" && info.sources.has("disclosed") && !isPrivate(info)) return;
+    const at = frame.anchor ?? loc;
+    const circuit = frame.stack[0];
+    const key = `${circuit}:${at.line}:${at.col}:${via}`;
+    const sources = [...info.sources]
+      .filter((s) => s.startsWith("w:") || s.startsWith("p:"))
+      .map((s) => (s.startsWith("w:") ? `witness:${s.slice(2)}` : `param:${s.slice(2)}`));
+    const protection: Protection = !isPrivate(info)
+      ? info.constant
+        ? "constant"
+        : "public"
+      : info.protection ?? "raw";
+    const prev = this.disclosures.get(key);
+    if (prev) {
+      for (const src of sources) if (!prev.sources.includes(src)) prev.sources.push(src);
+      return;
+    }
+    this.disclosures.set(key, {
+      circuit,
+      loc: at,
+      via,
+      target,
+      sources,
+      protection,
+      secretBits: protection === "raw" || protection === "hash" ? info.bits : undefined,
+    });
   }
 
   // ---------- types ----------
@@ -419,7 +505,7 @@ export class Analyzer {
         const value = this.evalExpr(s.value, frame);
         this.evalExpr(s.target, frame);
         const root = rootIdent(s.target);
-        if (root && !this.lookup(root, frame) && this.resolveName(this.ledgers, root, frame)) this.sink(value, s.loc, frame, true);
+        if (root && !this.lookup(root, frame) && this.resolveName(this.ledgers, root, frame)) this.sink(value, s.loc, frame, true, root);
         break;
       }
       case "if": {
@@ -437,7 +523,11 @@ export class Analyzer {
         break;
       }
       case "return": {
-        if (s.value) frame.returns.push(this.evalExpr(s.value, frame));
+        if (s.value) {
+          const v = this.evalExpr(s.value, frame);
+          frame.returns.push(v);
+          if (frame.exported && frame.depth === 0) this.recordDisclosure(v, s.loc, frame, "return");
+        }
         break;
       }
       case "expr":
@@ -455,8 +545,15 @@ export class Analyzer {
   }
 
   /** A value becomes public here (disclose() or a ledger write). */
-  private sink(info: Info, loc: Loc, frame: Frame, isWrite = false): void {
+  private sink(info: Info, loc: Loc, frame: Frame, isWrite = false, target?: string): void {
     if (isWrite) frame.nullifier.writes = true;
+    if (info.identity && frame.exported !== false) {
+      const uses = this.identityUses.get(info.identity) ?? new Map<string, Loc>();
+      const circuit = frame.stack[0];
+      if (!uses.has(circuit)) uses.set(circuit, frame.anchor ?? loc);
+      this.identityUses.set(info.identity, uses);
+    }
+    this.recordDisclosure(info, loc, frame, isWrite ? "ledger write" : "disclose", target);
     for (const w of info.rawWitness) if (!this.witnessSinks.has(w)) this.witnessSinks.set(w, frame.anchor ?? loc);
     if (info.rawSecret?.size) {
       const names = [...info.rawSecret].map((s) => (s.startsWith("w:") ? `witness '${s.slice(2)}()'` : `parameter '${s.slice(2)}'`));
@@ -527,6 +624,7 @@ export class Analyzer {
         if (["==", "!=", "<", "<=", ">", ">=", "&&", "||"].includes(e.op)) {
           out.bits = isPrivate(out) ? 1 : 0;
           out.rawSecret = undefined; // a comparison reveals one bit, not the secret
+          out.identity = undefined;
         }
         return out;
       }
@@ -587,13 +685,14 @@ export class Analyzer {
           const out = union([obj, ...args]);
           out.rawWitness = new Set();
           out.rawSecret = undefined;
+          out.identity = undefined;
           out.bits = callee.property === "member" ? (args.some(isPrivate) ? 1 : 0) : 0;
           out.ownpkDirect = false;
           return out;
         }
         // ledger write: insert, increment, write, push, ...
         frame.nullifier.writes = true;
-        for (const a of args) this.sink(a, e.loc, frame, true);
+        for (const a of args) this.sink(a, e.loc, frame, true, `${root}.${callee.property}()`);
         return empty();
       }
       const out = union([obj, ...args]);
@@ -637,6 +736,17 @@ export class Analyzer {
       };
     }
 
+    if (name && /^merkleTreePathRoot/.test(name)) {
+      // the root of a Merkle path: a hash that equals a root already on the ledger
+      const out = union(plain);
+      out.rawWitness = new Set();
+      out.rawSecret = undefined;
+      out.identity = undefined;
+      out.ownpkDirect = false;
+      out.bits = undefined;
+      out.protection = "hash";
+      return out;
+    }
     if (name && HASH_FNS.has(name)) return this.evalHash(e, plain, frame);
     if (name && COMMIT_FNS.has(name)) return this.evalCommit(e, plain, frame);
 
@@ -659,7 +769,7 @@ export class Analyzer {
     const out = union(plain);
     out.ownpkDirect = false;
     out.rawSecret = undefined;
-    out.bits = out.bits === undefined ? undefined : out.bits;
+    out.identity = undefined;
     return out;
   }
 
@@ -746,7 +856,14 @@ export class Analyzer {
       constant: all.constant,
       ownpkDirect: false,
       bits: all.bits === undefined ? undefined : Math.min(all.bits, 256),
+      protection: "hash",
     };
+
+    // MS010: deterministic in the secret alone (no fresh randomness)
+    const privateInputs = infos.filter((i) => isPrivate(i));
+    if (privateInputs.length && privateInputs.every((i) => (i.rawSecret?.size ?? 0) > 0 || i.identity)) {
+      out.identity = `${frame.prefix}${e.loc.line}:${e.loc.col}`;
+    }
 
     // MS003 candidate: every input is constant, public, or low-entropy. If a
     // high-entropy secret is mixed in, the result is safe even when an input
@@ -781,6 +898,8 @@ export class Analyzer {
           "MS004",
           e.loc,
           `This commitment's randomness has only about ${rand.bits} bits of entropy. Use at least 32 random bytes (Bytes<32>).`,
+          undefined,
+          "medium",
         );
       } else {
         const key = exprText(randExpr);
@@ -791,6 +910,7 @@ export class Analyzer {
             "MS004",
             e.loc,
             `The same randomness '${key}' is used by another commitment on line ${prev.loc.line}. Reusing randomness lets observers link the two commitments. Derive separate randomness for each (e.g. hash(tag, salt)).`,
+            "medium",
             "medium",
           );
         } else if (!prev) {
@@ -806,6 +926,7 @@ export class Analyzer {
       constant: false,
       ownpkDirect: false,
       bits: undefined,
+      protection: "commit",
     };
   }
 
@@ -836,6 +957,7 @@ export class Analyzer {
       prefix: entry.prefix,
       anchor: frame.anchor ?? (entry.external ? loc : undefined),
       nullifier: frame.nullifier,
+      exported: frame.exported,
     };
     for (const s of c.body) this.execStmt(s, inner);
     if (inner.ownpkCompare) {
