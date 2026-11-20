@@ -76,4 +76,56 @@ describe("CLI", () => {
     const pkg = JSON.parse(readFileSync("package.json", "utf8"));
     assert.equal(run(["--version"]).stdout.trim(), pkg.version);
   });
+
+  it("explains a rule from its documentation", () => {
+    const r = run(["explain", "ms001"]);
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /# MS001 own-public-key-auth/);
+    assert.equal(run(["explain", "MS999"]).code, 2);
+  });
+
+  it("prints the disclosure map as text and JSON", () => {
+    assert.match(run(["examples/vulnerable.compact", "--print", "disclosures"]).stdout, /backupKey/);
+    const json = JSON.parse(run(["examples/vulnerable.compact", "--print", "disclosures", "--format", "json"]).stdout);
+    assert.ok(json.disclosures.some((d: { protection: string }) => d.protection === "raw"));
+  });
+
+  it("writes a baseline, then only reports new findings", () => {
+    const dir = tempDir({ "c.compact": readFileSync("examples/vulnerable.compact", "utf8") });
+    assert.equal(run(["c.compact", "--write-baseline", "b.json"], dir).code, 0);
+    const clean = run(["c.compact", "--baseline", "b.json"], dir);
+    assert.equal(clean.code, 0);
+    assert.match(clean.stdout, /No findings/);
+    assert.match(run(["c.compact", "--baseline", "b.json", "--show-suppressed"], dir).stdout, /Suppressed \(9\)/);
+  });
+
+  it("writes a Markdown report", () => {
+    assert.match(run(["examples/vulnerable.compact", "--format", "markdown", "--fail-on", "none"]).stdout, /^# Midnight Shield report/);
+  });
+
+  it("filters by confidence", () => {
+    const r = run(["examples/vulnerable.compact", "--format", "json", "--min-confidence", "high", "--fail-on", "none"]);
+    assert.ok(JSON.parse(r.stdout).findings.every((f: { confidence: string }) => f.confidence === "high"));
+  });
+
+  it("fixes a missing pragma with --fix, and --fix-dry-run changes nothing", () => {
+    const src = "import CompactStandardLibrary;\nexport ledger x: Field;\n";
+    const dir = tempDir({ "a.compact": src });
+    assert.match(run(["a.compact", "--fix-dry-run"], dir).stdout, /would fix a\.compact \(MS006\)/);
+    assert.equal(readFileSync(join(dir, "a.compact"), "utf8"), src);
+    run(["a.compact", "--fix"], dir);
+    assert.match(readFileSync(join(dir, "a.compact"), "utf8"), /^pragma language_version/);
+  });
+
+  it("loads plugins and can skip TypeScript files", () => {
+    const dir = tempDir({ "a.compact": "pragma language_version >= 0.28.0;\nexport ledger c: Counter;\nexport circuit d(): [] { c.decrement(1); }\n", "app.ts": "console.log(seed);" });
+    const plugin = resolve("examples/plugins/no-counter-decrement.mjs");
+    const r = run([".", "--plugin", plugin, "--format", "json", "--fail-on", "none"], dir);
+    const ids = JSON.parse(r.stdout).findings.map((f: { ruleId: string }) => f.ruleId);
+    assert.ok(ids.includes("ACME001"));
+    assert.ok(ids.includes("MS102"));
+    const noSdk = JSON.parse(run([".", "--no-sdk", "--format", "json", "--fail-on", "none"], dir).stdout);
+    assert.ok(!noSdk.findings.some((f: { ruleId: string }) => f.ruleId === "MS102"));
+    assert.equal(run([".", "--plugin", "missing.mjs"], dir).code, 2);
+  });
 });

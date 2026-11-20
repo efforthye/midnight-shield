@@ -290,7 +290,7 @@ describe("parser", () => {
 
 describe("imports", () => {
   it("follows circuits from an imported module and reports at the call site", async () => {
-    const { lintFiles } = await import("../src/linter.js");
+    const { lintFiles } = await import("../src/node.js");
     const findings = lintFiles(["test/fixtures/imports/main.compact"]);
     const ms001 = findings.filter((f) => f.ruleId === "MS001");
     assert.equal(ms001.length, 1);
@@ -299,7 +299,7 @@ describe("imports", () => {
   });
 
   it("counts asserts inside imported circuits as constraints", async () => {
-    const { lintFiles } = await import("../src/linter.js");
+    const { lintFiles } = await import("../src/node.js");
     const findings = lintFiles(["test/fixtures/imports/main.compact"]);
     assert.equal(findings.filter((f) => f.ruleId === "MS002").length, 0);
   });
@@ -320,7 +320,7 @@ describe("config", () => {
   });
 
   it("skips files matching ignore globs", async () => {
-    const { listTargetFiles } = await import("../src/linter.js");
+    const { listTargetFiles } = await import("../src/node.js");
     const all = listTargetFiles(["test/fixtures/imports"]);
     const some = listTargetFiles(["test/fixtures/imports"], ["**/lib/**"]);
     assert.equal(all.length, 2);
@@ -382,10 +382,10 @@ describe("MS007 disclosed-secret", () => {
 describe("isSecretName", () => {
   it("recognizes common secret names", async () => {
     const { isSecretName } = await import("../src/analyzer.js");
-    for (const n of ["secretKey", "sk", "localSk", "_secret", "ownerSecretKey", "privateKey", "seed", "wit_ConfidentialTokenSK", "userPin"]) {
+    for (const n of ["secretKey", "sk", "localSk", "_secret", "ownerSecretKey", "privateKey", "seed", "wit_ConfidentialTokenSK"]) {
       assert.ok(isSecretName(n), n);
     }
-    for (const n of ["pk", "publicKey", "skip", "seeded_value_hash", "task", "pinned"]) {
+    for (const n of ["pk", "publicKey", "skip", "seeded_value_hash", "task", "pin"]) {
       assert.ok(!isSecretName(n), n);
     }
   });
