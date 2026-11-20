@@ -327,3 +327,157 @@ describe("config", () => {
     assert.equal(some.length, 1);
   });
 });
+
+describe("MS007 disclosed-secret", () => {
+  it("flags a secret key witness written to the ledger", () => {
+    const src = `
+      export ledger k: Bytes<32>;
+      witness secretKey(): Bytes<32>;
+      export circuit leak(): [] {
+        k = disclose(secretKey());
+      }`;
+    assert.equal(count(src, "MS007"), 1);
+  });
+
+  it("flags a secret parameter passed through a local variable", () => {
+    const src = `
+      export ledger k: Bytes<32>;
+      export circuit leak(_secret: Bytes<32>): [] {
+        const s = _secret;
+        k = disclose(s);
+      }`;
+    assert.equal(count(src, "MS007"), 1);
+  });
+
+  it("does not flag a hash of the secret", () => {
+    const src = `
+      export ledger k: Bytes<32>;
+      witness secretKey(): Bytes<32>;
+      export circuit ok(): [] {
+        k = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "app:pk"), secretKey()]));
+      }`;
+    assert.equal(count(src, "MS007"), 0);
+  });
+
+  it("does not flag a comparison that involves the secret", () => {
+    const src = `
+      export ledger ok: Boolean;
+      witness secretKey(): Bytes<32>;
+      export circuit check(expected: Bytes<32>): [] {
+        ok = disclose(secretKey() == expected);
+      }`;
+    assert.equal(count(src, "MS007"), 0);
+  });
+
+  it("does not flag values whose names are not secret", () => {
+    const src = `
+      export ledger k: Bytes<32>;
+      export circuit setKey(pk: Bytes<32>): [] {
+        k = disclose(pk);
+      }`;
+    assert.equal(count(src, "MS007"), 0);
+  });
+});
+
+describe("isSecretName", () => {
+  it("recognizes common secret names", async () => {
+    const { isSecretName } = await import("../src/analyzer.js");
+    for (const n of ["secretKey", "sk", "localSk", "_secret", "ownerSecretKey", "privateKey", "seed", "wit_ConfidentialTokenSK", "userPin"]) {
+      assert.ok(isSecretName(n), n);
+    }
+    for (const n of ["pk", "publicKey", "skip", "seeded_value_hash", "task", "pinned"]) {
+      assert.ok(!isSecretName(n), n);
+    }
+  });
+});
+
+const MERKLE_LEDGER = `
+  export ledger members: MerkleTree<10, Bytes<32>>;
+  export ledger used: Set<Bytes<32>>;
+  export ledger claims: Counter;
+  witness secretKey(): Bytes<32>;
+  witness memberPath(): MerkleTreePath<10, Bytes<32>>;
+  circuit leaf(sk: Bytes<32>): Bytes<32> {
+    return persistentHash<Vector<2, Bytes<32>>>([pad(32, "app:leaf"), sk]);
+  }`;
+
+describe("MS008 missing-nullifier", () => {
+  it("flags a Merkle-authorized state change with no nullifier", () => {
+    const src = `${MERKLE_LEDGER}
+      export circuit claim(): [] {
+        const path = memberPath();
+        assert(disclose(path.leaf == leaf(secretKey())), "not yours");
+        assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a member");
+        claims.increment(1);
+      }`;
+    assert.equal(count(src, "MS008"), 1);
+  });
+
+  it("does not flag when a nullifier is checked", () => {
+    const src = `${MERKLE_LEDGER}
+      export circuit claim(): [] {
+        const sk = secretKey();
+        const path = memberPath();
+        assert(disclose(path.leaf == leaf(sk)), "not yours");
+        assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a member");
+        const n = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "app:claim"), sk]));
+        assert(!used.member(n), "already claimed");
+        used.insert(n);
+        claims.increment(1);
+      }`;
+    assert.equal(count(src, "MS008"), 0);
+  });
+
+  it("does not flag a read-only membership check", () => {
+    const src = `${MERKLE_LEDGER}
+      export circuit isMember(): Boolean {
+        const path = memberPath();
+        assert(disclose(path.leaf == leaf(secretKey())), "not yours");
+        assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a member");
+        return true;
+      }`;
+    assert.equal(count(src, "MS008"), 0);
+  });
+});
+
+describe("MS009 unbound-merkle-path", () => {
+  it("flags a root check without a leaf check", () => {
+    const src = `${MERKLE_LEDGER}
+      export circuit enter(): [] {
+        const path = memberPath();
+        assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a member");
+      }`;
+    assert.equal(count(src, "MS009"), 1);
+  });
+
+  it("follows the root through a variable", () => {
+    const src = `${MERKLE_LEDGER}
+      export circuit enter(): [] {
+        const path = memberPath();
+        const root = disclose(merkleTreePathRoot<10, Bytes<32>>(path));
+        assert(members.checkRoot(root), "not a member");
+      }`;
+    assert.equal(count(src, "MS009"), 1);
+  });
+
+  it("accepts a leaf check after the root check, or inside an if", () => {
+    const after = `${MERKLE_LEDGER}
+      export circuit enter(): [] {
+        const path = memberPath();
+        assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a member");
+        assert(disclose(leaf(secretKey()) == path.leaf), "not yours");
+      }`;
+    assert.equal(count(after, "MS009"), 0);
+
+    const inIf = `${MERKLE_LEDGER}
+      export circuit check(): Boolean {
+        const path = memberPath();
+        const ok = members.checkRoot(merkleTreePathRoot<10, Bytes<32>>(disclose(path)));
+        if (ok) {
+          assert(path.leaf == leaf(secretKey()), "not yours");
+        }
+        return disclose(ok);
+      }`;
+    assert.equal(count(inIf, "MS009"), 0);
+  });
+});
