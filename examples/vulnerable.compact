@@ -14,6 +14,8 @@ export ledger recoveryKey: Bytes<32>;
 export ledger members: MerkleTree<10, Bytes<32>>;
 export ledger claims: Counter;
 export ledger claimed: Set<Bytes<32>>;
+export ledger posts: Set<Bytes<32>>;
+export ledger reactions: Set<Bytes<32>>;
 
 witness secretKey(): Bytes<32>;
 witness myChoice(): Uint<8>;
@@ -70,4 +72,30 @@ export circuit claimOnce(): [] {
   const n = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:claim:"), secretKey()]));
   assert(!claimed.member(n), "already claimed");
   claimed.insert(n);
+}
+
+circuit memberTag(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:tag:"), sk]);
+}
+
+// MS010: members act anonymously, but both circuits publish the same tag,
+// so all of one member's posts and reactions can be linked together.
+export circuit post(): [] {
+  const sk = secretKey();
+  const path = memberPath();
+  assert(disclose(path.leaf == memberLeaf(sk)), "not your path");
+  assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a member");
+  const tag = disclose(memberTag(sk));
+  assert(!posts.member(tag), "already posted");
+  posts.insert(tag);
+}
+
+export circuit react(): [] {
+  const sk = secretKey();
+  const path = memberPath();
+  assert(disclose(path.leaf == memberLeaf(sk)), "not your path");
+  assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a member");
+  const tag = disclose(memberTag(sk));
+  assert(!reactions.member(tag), "already reacted");
+  reactions.insert(tag);
 }
