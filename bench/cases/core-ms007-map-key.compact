@@ -1,0 +1,11 @@
+// expect: MS007
+// note: raw secret used as a public map key (real project pattern)
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger balances: Map<Bytes<32>, Uint<64>>;
+witness localSecretKey(): Bytes<32>;
+export circuit deposit(a: Uint<64>): [] {
+  const caller = disclose(localSecretKey());
+  balances.insert(caller, disclose(a));
+}

@@ -81,3 +81,9 @@ export function showMessage(el: HTMLElement, message: string) {
 
 // MS119: VITE_ variables are copied into the browser bundle.
 export const walletSeed = import.meta.env.VITE_WALLET_SEED;
+
+// MS120: anyone who knows the wallet address can compute this "secret".
+export async function voterSecretFor(walletAddress: string) {
+  const voterSecret = await sha256(walletAddress);
+  return voterSecret;
+}

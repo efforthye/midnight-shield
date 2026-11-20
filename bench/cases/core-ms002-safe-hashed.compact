@@ -1,0 +1,10 @@
+// expect: none
+// note: a witness that is only published hashed
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger tag: Bytes<32>;
+witness secretKey(): Bytes<32>;
+export circuit reg(): [] {
+  tag = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:tag:"), secretKey()]));
+}

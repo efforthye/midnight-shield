@@ -4,6 +4,7 @@
 
 import type { RawFinding } from "./analyzer.js";
 import { isSecretName } from "./analyzer.js";
+import { isSecretValue, withSecretValues } from "./secret-flow.js";
 import { lex, type Token } from "./lexer.js";
 import { checkSdkMore } from "./sdk-checks.js";
 
@@ -45,6 +46,10 @@ const BOUNDARY = new Set([",", ";", "{", "}"]);
 
 export function lintSdkSource(source: string): RawFinding[] {
   const { tokens } = lex(source);
+  return withSecretValues(tokens, () => lintSdkTokens(tokens));
+}
+
+function lintSdkTokens(tokens: Token[]): RawFinding[] {
   const out: RawFinding[] = [];
   const loc = (t: Token) => ({ line: t.line, col: t.col });
 
@@ -103,7 +108,7 @@ export function lintSdkSource(source: string): RawFinding[] {
         const tok = inner[k];
         if (tok.value === "(" || tok.value === "[") d++;
         else if ((tok.value === ")" || tok.value === "]") && d > 0) d--;
-        if (d > 0 || tok.kind !== "ident" || !isSecretName(tok.value)) continue;
+        if (d > 0 || tok.kind !== "ident" || !isSecretValue(tok.value)) continue;
         const next = inner[k + 1]?.value;
         const after = inner[k + 2]?.value ?? "";
         if (next === "." && SAFE_PROPERTIES.has(after)) continue; // secret.kind, seed.length: metadata only
@@ -169,7 +174,7 @@ function browserStorage(tokens: Token[]): RawFinding[] {
   const out: RawFinding[] = [];
   const sensitive = (t: Token) => {
     const v = t.kind === "string" ? t.value.slice(1, -1) : t.value;
-    return (t.kind === "ident" || t.kind === "string") && (/privatestate/i.test(v.replace(/[-_\s]/g, "")) || isSecretName(v));
+    return (t.kind === "ident" || t.kind === "string") && (/privatestate/i.test(v.replace(/[-_\s]/g, "")) || (t.kind === "ident" ? isSecretValue(v) : isSecretName(v)));
   };
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
@@ -231,7 +236,7 @@ function indexedDbStorage(tokens: Token[]): RawFinding[] {
     const hit = parts.find((x) => {
       if (x.kind !== "ident" && x.kind !== "string") return false;
       const v = x.kind === "string" ? x.value.slice(1, -1) : x.value;
-      return /privatestate/i.test(v.replace(/[-_\s]/g, "")) || isSecretName(v);
+      return /privatestate/i.test(v.replace(/[-_\s]/g, "")) || (x.kind === "ident" ? isSecretValue(v) : isSecretName(v));
     });
     if (!hit) continue;
     out.push({
@@ -298,6 +303,17 @@ function insecureRandomness(tokens: Token[]): RawFinding[] {
       loc: { line: tokens[i].line, col: tokens[i].col },
       message: `'${target}' is made with Math.random(), which is not cryptographically secure: its output can be predicted from earlier values. Secrets, seeds, nonces and commitment randomness need crypto.getRandomValues() (browser) or crypto.randomBytes() (Node.js).`,
     });
+  // follow only names bound once (`const r = …`): a `let` that is reassigned elsewhere
+  // (a mock value in a fallback branch, a real one otherwise) is not one random value
+  const assignments = new Map<string, number>();
+  const declaredConst = new Set<string>();
+  for (let i = 1; i + 1 < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.kind !== "ident") continue;
+    if (tokens[i - 1].value === "const") declaredConst.add(t.value);
+    if (tokens[i + 1].value === "=" && tokens[i + 2]?.value !== "=" && tokens[i - 1].value !== ".") assignments.set(t.value, (assignments.get(t.value) ?? 0) + 1);
+  }
+  const constOnly = (name: string) => declaredConst.has(name) && (assignments.get(name) ?? 0) <= 1;
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 0; i + 3 < tokens.length; i++) {
       const direct = isMathRandom(i);
@@ -307,7 +323,7 @@ function insecureRandomness(tokens: Token[]): RawFinding[] {
       if (!target) continue;
       if (isRandomnessName(target)) {
         if (!out.some((f) => f.loc.line === tokens[i].line)) flag(i, target);
-      } else if (pass === 0) tainted.add(target);
+      } else if (pass === 0 && constOnly(target)) tainted.add(target);
     }
   }
   return out;
@@ -364,7 +380,7 @@ function secretsOverNetwork(tokens: Token[]): RawFinding[] {
         derived -= derivedDepth.pop() ?? 0;
         return false;
       }
-      if (derived > 0 || a.kind !== "ident" || !isSecretName(a.value)) return false;
+      if (derived > 0 || a.kind !== "ident" || !isSecretValue(a.value)) return false;
       const next = args[k + 1]?.value;
       if (next === "(") return false; // a function such as hashSecret(...)
       if (next === "." && SAFE_PROPERTIES.has(args[k + 2]?.value ?? "")) return false;

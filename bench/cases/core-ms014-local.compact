@@ -1,0 +1,14 @@
+// expect: MS014
+// note: randomness through a local
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger sealed: Bytes<32>;
+export ledger salt: Bytes<32>;
+export ledger winner: Uint<64>;
+witness bidRandomness(): Bytes<32>;
+export circuit bid(v: Uint<64>): [] { sealed = disclose(persistentCommit<Uint<64>>(v, bidRandomness())); }
+export circuit leak(): [] {
+  const r = bidRandomness();
+  salt = disclose(r);
+}

@@ -1,0 +1,11 @@
+// expect: MS002
+// note: witness inside a struct
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+struct Rec { score: Uint<32>, round: Uint<32> }
+export ledger last: Rec;
+witness myScore(): Uint<32>;
+export circuit sync(r: Uint<32>): [] {
+  last = Rec { score: disclose(myScore()), round: disclose(r) };
+}

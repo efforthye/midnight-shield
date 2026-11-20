@@ -1,0 +1,11 @@
+// expect: MS013
+// note: negated witness Boolean
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger n: Counter;
+witness isBanned(): Boolean;
+export circuit act(): [] {
+  assert(!disclose(isBanned()), "banned");
+  n.increment(1);
+}

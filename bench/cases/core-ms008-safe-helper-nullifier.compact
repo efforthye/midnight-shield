@@ -1,0 +1,26 @@
+// expect: none
+// note: nullifier handled in a helper circuit
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger members: MerkleTree<10, Bytes<32>>;
+export ledger counter: Counter;
+witness secretKey(): Bytes<32>;
+witness path(): MerkleTreePath<10, Bytes<32>>;
+export circuit leaf(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:leaf:"), sk]);
+}
+export ledger used: Set<Bytes<32>>;
+circuit spendOnce(sk: Bytes<32>): [] {
+  const n = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:n:"), sk]));
+  assert(!used.member(n), "used");
+  used.insert(n);
+}
+export circuit act(): [] {
+  const sk = secretKey();
+  const p = path();
+  assert(disclose(p.leaf == leaf(sk)), "not yours");
+  assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(p))), "not a member");
+  spendOnce(sk);
+  counter.increment(1);
+}

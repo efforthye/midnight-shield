@@ -6,12 +6,10 @@ import { lintFiles } from "../src/node.js";
 
 // Every labeled benchmark case must give exactly the expected rules, except the
 // misses documented as known limits (see bench/RESULTS.md).
-const dir = "bench/cases";
-
 describe("benchmark cases", () => {
-  for (const f of readdirSync(dir).filter((x) => /\.(compact|tsx?)$/.test(x)).sort()) {
+  for (const path of ["bench/cases", "bench/known"].flatMap((d) => readdirSync(d).filter((x) => /\.(compact|tsx?)$/.test(x)).sort().map((x) => join(d, x)))) {
+    const f = path;
     it(f, () => {
-      const path = join(dir, f);
       const text = readFileSync(path, "utf8");
       const expect = (text.match(/^\/\/ expect: (.*)$/m)?.[1] ?? "none").split(",").map((s) => s.trim()).filter((s) => s && s !== "none").sort();
       const knownLimit = /^\/\/ note: .*known limit/m.test(text);

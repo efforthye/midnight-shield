@@ -1,0 +1,14 @@
+// expect: none
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger a: Bytes<32>;
+export ledger b: Bytes<32>;
+witness amountA(): Uint<64>;
+witness amountB(): Uint<64>;
+witness saltA(): Bytes<32>;
+witness saltB(): Bytes<32>;
+export circuit commitBoth(): [] {
+  a = disclose(persistentCommit<Uint<64>>(amountA(), saltA()));
+  b = disclose(persistentCommit<Uint<64>>(amountB(), saltB()));
+}

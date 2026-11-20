@@ -59,6 +59,28 @@ jobs:
             compact compile --skip-zk "$f" "build/$(basename "$f" .compact)"
             echo "::endgroup::"
           done
+      # Every Compact file in the benchmark and the real-world reproductions must be valid Compact,
+      # so the accuracy numbers are measured on code that actually compiles.
+      - name: Compile benchmark cases
+        # reports in the job summary; flip to blocking once every case compiles on the current toolchain
+        continue-on-error: true
+        run: |
+          failed=0; total=0
+          echo "| File | Compiles |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          for f in bench/cases/*.compact bench/known/*.compact examples/locked.compact; do
+            total=$((total + 1))
+            if out=$(compact compile --skip-zk "$f" "build/bench/$(basename "$f" .compact)" 2>&1); then
+              echo "| \`$f\` | yes |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              failed=$((failed + 1))
+              echo "| \`$f\` | **no** |" >> "$GITHUB_STEP_SUMMARY"
+              echo "::error file=$f::$(echo "$out" | grep -m1 -i -E 'error|exception' | head -c 300)"
+            fi
+          done
+          echo "$((total - failed)) of $total benchmark files compile."
+          echo "" >> "$GITHUB_STEP_SUMMARY"; echo "**$((total - failed)) of $total compile.**" >> "$GITHUB_STEP_SUMMARY"
+          test "$failed" -eq 0
 
   # The web playground and the VS Code extension must build.
   build-extras:

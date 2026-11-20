@@ -1,0 +1,18 @@
+// expect: MS011
+// note: write inside a helper circuit
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger ownerId: Bytes<32>;
+witness secretKey(): Bytes<32>;
+export circuit deriveId(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:owner:"), sk]);
+}
+constructor() {
+  ownerId = disclose(deriveId(secretKey()));
+}
+export circuit withdraw(): [] {
+  assert(deriveId(secretKey()) == ownerId, "not the owner");
+}
+circuit setIt(id: Bytes<32>): [] { ownerId = disclose(id); }
+export circuit changeOwner(id: Bytes<32>): [] { setIt(id); }

@@ -1,0 +1,11 @@
+// expect: MS004, MS015
+// note: randomness is a constant (empty padding)
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger c: Bytes<32>;
+witness amount(): Uint<64>;
+witness shortSalt(): Uint<16>;
+export circuit commit(): [] {
+  c = disclose(persistentCommit<Uint<64>>(amount(), pad(32, "") as Bytes<32>));
+}

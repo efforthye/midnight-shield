@@ -24,6 +24,9 @@ export interface RuleMeta {
   fixable?: boolean;
 }
 
+/** Compact language versions the parser is tested against (the corpus and the examples). */
+export const SUPPORTED_LANGUAGE = { min: "0.16", max: "0.28" } as const;
+
 export const RULES: RuleMeta[] = [
   {
     id: "MS000",
@@ -258,6 +261,13 @@ export const RULES: RuleMeta[] = [
     summary: "A local constant is computed but never used.",
   },
   {
+    id: "MS033",
+    name: "unsupported-language-version",
+    severity: "low",
+    confidence: "high",
+    summary: "The pragma asks for a Compact language version outside the range Midnight Shield is tested with, so new syntax may be misread.",
+  },
+  {
     id: "MS101",
     name: "remote-proof-server",
     severity: "critical",
@@ -389,6 +399,13 @@ export const RULES: RuleMeta[] = [
     severity: "critical",
     confidence: "high",
     summary: "TypeScript/JavaScript: a secret is read from a VITE_/NEXT_PUBLIC_/REACT_APP_ variable, which the bundler ships to every visitor.",
+  },
+  {
+    id: "MS120",
+    name: "secret-from-public-data",
+    severity: "high",
+    confidence: "medium",
+    summary: "TypeScript/JavaScript: a secret is computed only from public values such as an address or a public key, so anyone can recompute it.",
   },
 ];
 

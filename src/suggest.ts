@@ -394,6 +394,12 @@ export function suggestFix(ruleId: string, message: string, line: string): Sugge
       if (!name) return undefined;
       return { before, after: [`${ind}// read ${name.replace(/^(VITE_|NEXT_PUBLIC_|REACT_APP_|PUBLIC_|EXPO_PUBLIC_|NUXT_PUBLIC_|GATSBY_)/, "")} on a server, or ask the user for their own seed`], note: "Rename the variable without the public prefix and keep it out of browser code." };
     }
+    case "MS120": {
+      const name = quoted(message);
+      if (!name) return undefined;
+      const after = line.replace(/=\s*(await\s+)?[^;]+;/, "= crypto.getRandomValues(new Uint8Array(32)); // keep it in private state");
+      return after === line ? undefined : { before, after: [after], note: "Or derive it from a wallet signature, which only the key holder can produce." };
+    }
     case "MS104":
       return {
         before,

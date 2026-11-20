@@ -7,7 +7,7 @@
 // circuits are followed. Rules hook into this walk.
 
 import type { Decl, Expr, Loc, Param, Program, Stmt, TypeRef } from "./ast.js";
-import { RULES_BY_ID, type Confidence, type Severity } from "./rules.js";
+import { SUPPORTED_LANGUAGE, RULES_BY_ID, type Confidence, type Severity } from "./rules.js";
 
 export interface RawFinding {
   ruleId: string;
@@ -100,6 +100,25 @@ function union(infos: Info[]): Info {
 const SECRET_WORDS = new Set(["sk", "secret", "seed", "mnemonic", "password", "passphrase", "privkey"]);
 
 /** Does an identifier look like it names a secret? (`secretKey`, `localSk`, `_secret`, `privateKey`) */
+const versionKey = (v: string) => v.split(".").slice(0, 2).map((x) => x.padStart(4, "0")).join(".");
+
+/** MS033: a pragma whose version range lies outside the tested range. */
+export function languageVersionWarning(pragma: string): string | undefined {
+  const versions = [...pragma.matchAll(/(\d+)\s*\.\s*(\d+)(?:\s*\.\s*\d+)?/g)].map((m) => `${m[1]}.${m[2]}`);
+  if (!versions.length) return undefined;
+  const { min, max } = SUPPORTED_LANGUAGE;
+  // `>= 0.29` or an exact `0.29`: every version it allows is newer than the tested range
+  const lowest = versions.map(versionKey).sort()[0];
+  if (lowest > versionKey(max)) {
+    return `This file requires Compact language ${versions[0]} or later, but Midnight Shield is tested with ${min}–${max}. Newer syntax may be misread or skipped, so findings for this file may be incomplete. Check for a newer Midnight Shield release.`;
+  }
+  const highest = versions.map(versionKey).sort().reverse()[0];
+  if (highest < versionKey(min)) {
+    return `This file targets Compact language ${versions[versions.length - 1]}, older than the ${min}–${max} range Midnight Shield is tested with. Older syntax may be misread.`;
+  }
+  return undefined;
+}
+
 export function isSecretName(name: string): boolean {
   const words = name
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
@@ -257,6 +276,11 @@ export class Analyzer {
   run(): RawFinding[] {
     for (const d of this.program.diagnostics) {
       this.report("MS000", d.loc, `Could not parse this part of the file (${d.message}); it was skipped.`);
+    }
+    for (const d of this.program.decls) {
+      if (d.kind !== "pragma" || !/language_version/.test(d.text)) continue;
+      const out = languageVersionWarning(d.text);
+      if (out) this.report("MS033", d.loc, out);
     }
     if (!this.program.decls.some((d) => d.kind === "pragma")) {
       this.report("MS006", { line: 1, col: 1 }, "No `pragma language_version` declared. Pin the Compact language version this contract was written for.");
@@ -787,6 +811,18 @@ export class Analyzer {
     return out;
   }
 
+  /** Whether an expression depends on a witness value (directly, through locals, or through helper calls). */
+  private fromWitness(e: Expr, frame: Frame): boolean {
+    for (const x of walkExpr(e)) {
+      if (x.kind === "call" && x.callee.kind === "ident" && this.resolveName(this.witnesses, x.callee.name, frame)) return true;
+      if (x.kind === "ident") {
+        const info = this.lookup(x.name, frame);
+        if (info && [...info.sources].some((s) => s.startsWith("w:"))) return true;
+      }
+    }
+    return false;
+  }
+
   /** MS008: look for Merkle membership proofs and nullifier checks inside an assert condition. */
   private scanAuthorization(e: Expr, negated: boolean, frame: Frame): void {
     if (e.kind === "unary" && e.op === "!") return this.scanAuthorization(e.arg, !negated, frame);
@@ -795,10 +831,12 @@ export class Analyzer {
     }
     if (e.kind === "binary" && (e.op === "==" || e.op === "!=")) {
       // MS009: `path.leaf == ...` binds the Merkle path to a value
-      for (const side of [e.left, e.right]) {
+      for (const [side, other] of [[e.left, e.right], [e.right, e.left]] as const) {
         if (side.kind === "member" && side.property === "leaf") {
           const root = rootIdent(side.object);
-          if (root) frame.nullifier.boundPaths.add(this.pathKey(root, frame));
+          // only a value derived from a witness secret ties the path to the caller;
+          // a parameter or a ledger value can be supplied or read by anyone
+          if (root && this.fromWitness(other, frame)) frame.nullifier.boundPaths.add(this.pathKey(root, frame));
         }
       }
       return;
@@ -1038,5 +1076,44 @@ export function exprText(e: Expr): string {
       return `...${exprText(e.arg)}`;
     case "lambda":
       return "(lambda)";
+  }
+}
+
+function* walkExpr(e: Expr): Generator<Expr> {
+  yield e;
+  switch (e.kind) {
+    case "call":
+      yield* walkExpr(e.callee);
+      for (const a of e.args) yield* walkExpr(a);
+      break;
+    case "member":
+      yield* walkExpr(e.object);
+      break;
+    case "index":
+      yield* walkExpr(e.object);
+      yield* walkExpr(e.index);
+      break;
+    case "vector":
+      for (const x of e.elements) yield* walkExpr(x);
+      break;
+    case "struct":
+      for (const f of e.fields) yield* walkExpr(f.value);
+      break;
+    case "binary":
+      yield* walkExpr(e.left);
+      yield* walkExpr(e.right);
+      break;
+    case "unary":
+    case "spread":
+      yield* walkExpr(e.arg);
+      break;
+    case "cast":
+      yield* walkExpr(e.expr);
+      break;
+    case "cond":
+      yield* walkExpr(e.test);
+      yield* walkExpr(e.then);
+      yield* walkExpr(e.else);
+      break;
   }
 }

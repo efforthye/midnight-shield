@@ -328,3 +328,28 @@ describe("MS107–MS112", () => {
     });
   }
 });
+
+describe("MS033 unsupported-language-version", () => {
+  const src = (pragma: string) => `pragma language_version ${pragma};\nimport CompactStandardLibrary;\nexport ledger x: Uint<8>;\nexport circuit f(): [] { x = 1; }\n`;
+  it("warns when the pragma only allows versions outside the tested range", () => {
+    assert.ok(has(src(">= 0.30.0"), "MS033"));
+    assert.ok(has(src("0.31"), "MS033"));
+    assert.ok(has(src("0.12"), "MS033"));
+  });
+  it("is quiet for tested versions and open ranges that include them", () => {
+    for (const p of [">= 0.28.0", "0.28", ">= 0.16.0", ">= 0.25.0", ">= 0.22 && <= 0.28"]) assert.ok(!has(src(p), "MS033"), p);
+  });
+});
+
+describe("DApp secrets tracked by where they come from", () => {
+  it("treats aliases of secret properties and generator results as secrets", () => {
+    assert.ok(has("const k = privateState.secretKey;\nconsole.log(`key ${k}`);", "MS102", "a.ts"));
+    assert.ok(has("const words = generateMnemonic();\nawait fetch(`/backup?w=${words}`);", "MS106", "a.ts"));
+    assert.ok(has("const m = await wallet.exportSeed();\nconst hex = toHex(m);\nSentry.setContext(\"w\", { hex });", "MS117", "a.ts"));
+    assert.ok(has("const { secretKey: k } = privateState;\nlocalStorage.setItem(\"x\", k);", "MS104", "a.ts"));
+  });
+  it("does not treat values derived through other functions as secrets", () => {
+    assert.ok(!has("const k = privateState.secretKey;\nconst pk = publicKeyOf(k);\nconsole.log(pk);", "MS102", "a.ts"));
+    assert.ok(!has("const file = stateFileFor(env.networkId, seeds.masterSeed);\nlogger.warn(`no ${file}`);", "MS102", "a.ts"));
+  });
+});

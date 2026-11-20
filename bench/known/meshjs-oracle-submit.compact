@@ -1,0 +1,17 @@
+// expect: MS008, MS009, MS013
+// source: https://github.com/MeshJS/midnight-contracts-wizard/issues/1 (oracle.compact, submitOracleData and updateValue)
+// note: minimal reproduction. Any operator's public path passes, and the signature check is a witness.
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger authorizedOperators: MerkleTree<10, Bytes<32>>;
+export ledger price: Uint<128>;
+witness findOperator(proof: Bytes<32>): MerkleTreePath<10, Bytes<32>>;
+witness verifySignature(signature: Bytes<32>, data: Uint<128>): Boolean;
+
+export circuit submitOracleData(value: Uint<128>, proof: Bytes<32>, signature: Bytes<32>): [] {
+  const path = disclose(findOperator(proof));
+  assert(authorizedOperators.checkRoot(merkleTreePathRoot<10, Bytes<32>>(path)), "Unauthorized oracle operator");
+  assert(verifySignature(disclose(signature), disclose(value)), "Invalid signature");
+  price = disclose(value);
+}

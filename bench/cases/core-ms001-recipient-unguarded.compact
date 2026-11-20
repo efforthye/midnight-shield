@@ -1,0 +1,8 @@
+// expect: MS019
+// note: ownPublicKey() as a recipient is fine for MS001, but nothing checks the caller, so MS019 applies
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export circuit pay(i: QualifiedShieldedCoinInfo, v: Uint<128>): [] {
+  sendShielded(disclose(i), left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey()), disclose(v));
+}

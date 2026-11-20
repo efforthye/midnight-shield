@@ -1,0 +1,13 @@
+// expect: none
+// note: checked against a ledger value
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger level: Uint<8>;
+export ledger maxLevel: Uint<8>;
+witness myLevel(): Uint<8>;
+export circuit sync(): [] {
+  const l = myLevel();
+  assert(l <= maxLevel, "too high");
+  level = disclose(l);
+}

@@ -1,0 +1,19 @@
+// expect: MS013
+// note: a real caller check, then an if on a witness Boolean: the branch is still the prover's choice
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger ownerId: Bytes<32>;
+witness secretKey(): Bytes<32>;
+export circuit deriveId(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:owner:"), sk]);
+}
+constructor() {
+  ownerId = disclose(deriveId(secretKey()));
+}
+export ledger n: Counter;
+witness approved(): Boolean;
+export circuit act(): [] {
+  assert(deriveId(secretKey()) == ownerId, "not the owner");
+  if (disclose(approved())) { n.increment(1); }
+}

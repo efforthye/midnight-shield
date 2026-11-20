@@ -1,0 +1,13 @@
+// expect: MS001
+// note: used in an if instead of an assert
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger owner: ZswapCoinPublicKey;
+export ledger n: Counter;
+constructor() { owner = ownPublicKey(); }
+export circuit reset(): [] {
+  if (ownPublicKey() == owner) {
+    n.resetToDefault();
+  }
+}

@@ -1,0 +1,17 @@
+// expect: MS008, MS009, MS013
+// source: https://github.com/MeshJS/midnight-contracts-wizard/issues/1 (lending-borrowing.compact, borrow)
+// note: minimal reproduction. The health-factor check is a witness, and the collateral path is not tied to the caller.
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger collateralPositions: MerkleTree<10, Bytes<32>>;
+export ledger debt: Uint<128>;
+witness findCollateralPosition(proof: Bytes<32>): MerkleTreePath<10, Bytes<32>>;
+witness verifyHealthFactor(proof: Bytes<32>, amount: Uint<128>): Boolean;
+
+export circuit borrow(amount: Uint<128>, proof: Bytes<32>): [] {
+  const path = disclose(findCollateralPosition(proof));
+  assert(collateralPositions.checkRoot(merkleTreePathRoot<10, Bytes<32>>(path)), "Invalid collateral position");
+  assert(verifyHealthFactor(proof, disclose(amount)), "Insufficient collateral ratio");
+  debt = disclose(amount);
+}

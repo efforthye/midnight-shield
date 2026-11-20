@@ -12,9 +12,11 @@
 //   MS117 secret-sent-to-analytics    a secret passed to an analytics or error-tracking call
 //   MS118 unsafe-html                 HTML from a variable written into the page (innerHTML, dangerouslySetInnerHTML)
 //   MS119 secret-in-public-env        a secret read from a variable that the bundler ships to the browser
+//   MS120 secret-from-public-data     a secret computed only from public values (an address, a public key)
 
 import type { RawFinding } from "./analyzer.js";
 import { isSecretName } from "./analyzer.js";
+import { isSecretValue, withSecretValues } from "./secret-flow.js";
 import { lex, type Token } from "./lexer.js";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]", "host.docker.internal"]);
@@ -58,7 +60,7 @@ function directSecrets(tokens: Token[], open: number): string[] {
       call -= stack.pop() ?? 0;
       continue;
     }
-    if (call > 0 || t.kind !== "ident" || !isSecretName(t.value)) continue;
+    if (call > 0 || t.kind !== "ident" || !isSecretValue(t.value)) continue;
     // the name of a secret (an environment variable, a file), not the secret
     if (/(Env|Var|Name|Path|File|Dir|Label|Prefix|Id|Length|Len|Type|Kind|Url|Key[sS]?Env)$/.test(t.value)) continue;
     const next = inner[k + 1]?.value;
@@ -330,7 +332,7 @@ function secretInUi(tokens: Token[]): RawFinding[] {
     const prev = tokens[i - 1].value;
     const inText = prev === ">" ;
     const inAttr = prev === "=" && /^(value|children|title|alt|placeholder|label)$/.test(tokens[i - 2]?.value ?? "") && tokens[i - 3]?.kind === "ident";
-    if (!(inText || inAttr) || !isSecretName(tokens[i + 1].value)) continue;
+    if (!(inText || inAttr) || !isSecretValue(tokens[i + 1].value)) continue;
     out.push({
       ruleId: "MS116",
       severity: "medium",
@@ -413,6 +415,46 @@ function secretInPublicEnv(tokens: Token[]): RawFinding[] {
   return out;
 }
 
+const PUBLIC_NAME = /(pub(lic)?_?key|pubkey|address|addr|account(id)?|wallet(address|id)?|username|email|did|handle)$/i;
+const RANDOM_SOURCE = /^(getRandomValues|randomBytes|randomUUID|generateKey|generateMnemonic|generateRandomSeed|randomSeed)$/;
+
+/** MS120: `const voterSecret = hash(walletAddress)`: a secret that anyone can recompute from public data. */
+function secretFromPublicData(tokens: Token[]): RawFinding[] {
+  const out: RawFinding[] = [];
+  for (let i = 1; i + 2 < tokens.length; i++) {
+    const t = tokens[i];
+    if (t.kind !== "ident" || (tokens[i - 1].value !== "const" && tokens[i - 1].value !== "let") || tokens[i + 1].value !== "=") continue;
+    if (!isSecretName(t.value) || /(hash|commit|id$|pk$|public|pub)/i.test(t.value)) continue;
+    // the right-hand side up to the end of the statement
+    const rhs: Token[] = [];
+    let depth = 0;
+    for (let j = i + 2; j < tokens.length; j++) {
+      const v = tokens[j].value;
+      if (v === "(" || v === "[" || v === "{") depth++;
+      else if (v === ")" || v === "]" || v === "}") depth--;
+      if ((v === ";" && depth <= 0) || depth < 0) break;
+      if (tokens[j].line > t.line + 3) break;
+      if (tokens[j].kind === "string" && v.startsWith("`")) rhs.push(...lex(v.slice(1, -1).replace(/\$\{([^}]*)\}/g, " $1 ")).tokens.filter((x) => x.kind !== "eof"));
+      else rhs.push(tokens[j]);
+    }
+    // a function (`const seedFor = (addr) => …`) is not a stored secret
+    if (rhs.some((x) => x.value === "=>" || x.value === "function")) continue;
+    const idents = rhs.filter((x) => x.kind === "ident");
+    const publicInput = idents.find((x, k) => PUBLIC_NAME.test(x.value) && rhs[rhs.indexOf(x) + 1]?.value !== "(" && k >= 0);
+    if (!publicInput) continue;
+    const hasSecretOrRandom = idents.some((x) => (isSecretName(x.value) && x.value !== t.value) || RANDOM_SOURCE.test(x.value) || /random|entropy|mnemonic|seed|password|passphrase|signature|sign/i.test(x.value));
+    if (hasSecretOrRandom) continue;
+    out.push({
+      ruleId: "MS120",
+      severity: "high",
+      confidence: "medium",
+      loc: { line: t.line, col: t.col },
+      message: `'${t.value}' is used as a secret, but it is computed only from '${publicInput.value}', which is public. Anyone who knows the ${publicInput.value} can compute the same value and act as this user. Derive secrets from fresh randomness (crypto.getRandomValues) or a wallet signature, and keep them in private state.`,
+    });
+  }
+  return out;
+}
+
 export function checkSdkMore(tokens: Token[]): RawFinding[] {
   return [
     ...tlsDisabled(tokens),
@@ -426,5 +468,6 @@ export function checkSdkMore(tokens: Token[]): RawFinding[] {
     ...secretToAnalytics(tokens),
     ...unsafeHtml(tokens),
     ...secretInPublicEnv(tokens),
+    ...secretFromPublicData(tokens),
   ];
 }

@@ -1,0 +1,10 @@
+// expect: MS001
+// note: compared through .bytes
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger ownerBytes: Bytes<32>;
+constructor() { ownerBytes = ownPublicKey().bytes; }
+export circuit withdraw(): [] {
+  assert(ownPublicKey().bytes == ownerBytes, "not the owner");
+}

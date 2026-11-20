@@ -1,0 +1,11 @@
+// expect: none
+// note: a Boolean from the ledger, not from a witness
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger paused: Boolean;
+export ledger n: Counter;
+export circuit act(): [] {
+  assert(!paused, "paused");
+  n.increment(1);
+}

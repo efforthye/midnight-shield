@@ -1,0 +1,11 @@
+// expect: MS003, MS005
+// note: enum with three values
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+enum Choice { yes, no, abstain }
+export ledger h: Bytes<32>;
+witness myChoice(): Choice;
+export circuit vote(): [] {
+  h = disclose(persistentHash<Choice>(myChoice()));
+}

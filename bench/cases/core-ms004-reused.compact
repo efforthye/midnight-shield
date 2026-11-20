@@ -1,0 +1,15 @@
+// expect: MS004
+// note: same randomness for two commitments
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger a: Bytes<32>;
+export ledger b: Bytes<32>;
+witness amountA(): Uint<64>;
+witness amountB(): Uint<64>;
+witness salt(): Bytes<32>;
+export circuit commitBoth(): [] {
+  const r = salt();
+  a = disclose(persistentCommit<Uint<64>>(amountA(), r));
+  b = disclose(persistentCommit<Uint<64>>(amountB(), r));
+}

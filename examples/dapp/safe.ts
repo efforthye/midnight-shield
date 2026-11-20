@@ -40,3 +40,8 @@ export function showMessage(el: HTMLElement, message: string) {
 }
 
 export const indexerUrl = import.meta.env.VITE_INDEXER_URL;
+
+export function newVoterSecret() {
+  const voterSecret = crypto.getRandomValues(new Uint8Array(32));
+  return voterSecret;
+}

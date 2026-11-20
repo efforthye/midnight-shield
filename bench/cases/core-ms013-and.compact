@@ -1,0 +1,12 @@
+// expect: MS013
+// note: two witness Booleans combined
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger n: Counter;
+witness isAdmin(): Boolean;
+witness isActive(): Boolean;
+export circuit act(): [] {
+  assert(disclose(isAdmin() && isActive()), "no");
+  n.increment(1);
+}

@@ -11,10 +11,11 @@ import { PluginError, type CustomRule } from "./plugins.js";
 import { VERSION, formatDisclosures, formatDisclosuresMarkdown, formatJson, formatMarkdown, formatSarif, formatText } from "./reporters.js";
 import { badgeJson } from "./badge.js";
 import { createSnapshot, diffIsEmpty, diffSnapshots, formatDiffMarkdown, formatDiffText, readSnapshot } from "./privacy-diff.js";
-import { CONFIDENCE_ORDER, RULES, RULES_BY_ID, SEVERITY_ORDER, type Confidence, type Severity } from "./rules.js";
+import { CONFIDENCE_ORDER, RULES, SUPPORTED_LANGUAGE, RULES_BY_ID, SEVERITY_ORDER, type Confidence, type Severity } from "./rules.js";
 
 const HELP = `midnight-shield ${VERSION}
 Static analyzer for Midnight Compact contracts and their TypeScript code.
+Tested with Compact language ${SUPPORTED_LANGUAGE.min}–${SUPPORTED_LANGUAGE.max}; files outside that range get a warning (MS033).
 
 Usage:
   midnight-shield [paths...] [options]     scan files and folders (default: .)
@@ -369,6 +370,17 @@ async function main(argv: string[]): Promise<void> {
     process.stdout.write(text(color) + "\n");
   } else {
     process.stdout.write(report + "\n");
+  }
+
+  // parts of files that were not analyzed: say so on stderr, so a clean report is not mistaken for full coverage
+  const partial = new Set(findings.filter((f) => f.ruleId === "MS000").map((f) => f.file));
+  const versionWarned = new Set(findings.filter((f) => f.ruleId === "MS033").map((f) => f.file));
+  if (partial.size || versionWarned.size) {
+    const parts = [
+      partial.size ? `${partial.size} file(s) could not be fully parsed (MS000)` : "",
+      versionWarned.size ? `${versionWarned.size} file(s) target a Compact version outside ${SUPPORTED_LANGUAGE.min}–${SUPPORTED_LANGUAGE.max} (MS033)` : "",
+    ].filter(Boolean);
+    process.stderr.write(`midnight-shield: warning: ${parts.join("; ")}. Findings for those parts may be incomplete.\n`);
   }
 
   if (failLevel !== "none") {

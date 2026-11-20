@@ -1,0 +1,7 @@
+// expect: none
+// note: a public key passed under a key-like parameter name
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger signingPublicKey: Bytes<32>;
+export circuit register(signingKey: Bytes<32>): [] { signingPublicKey = disclose(signingKey); }

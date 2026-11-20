@@ -1,0 +1,12 @@
+// expect: none
+// note: a different witness that is not commitment randomness
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger sealed: Bytes<32>;
+export ledger salt: Bytes<32>;
+export ledger winner: Uint<64>;
+witness bidRandomness(): Bytes<32>;
+export circuit bid(v: Uint<64>): [] { sealed = disclose(persistentCommit<Uint<64>>(v, bidRandomness())); }
+witness otherSalt(): Bytes<32>;
+export circuit pub(): [] { salt = disclose(otherSalt()); }
