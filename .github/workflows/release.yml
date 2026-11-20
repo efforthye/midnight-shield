@@ -13,7 +13,6 @@ on:
 permissions:
   contents: write
   id-token: write # npm Trusted Publishing and provenance
-  packages: write # GitHub Packages
 
 jobs:
   publish:
@@ -29,17 +28,31 @@ jobs:
       - name: Check the tag matches package.json
         run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
       - run: npm publish --access public # provenance is added automatically
-      # Also list the package on the repository page (GitHub Packages needs a scoped name).
-      - name: Publish to GitHub Packages
-        env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
-        run: |
-          echo "//npm.pkg.github.com/:_authToken=\${NODE_AUTH_TOKEN}" >> "$NPM_CONFIG_USERCONFIG"
-          npm pkg set name=@efforthye/midnight-shield
-          npm pkg delete publishConfig.provenance # GitHub Packages has no provenance
-          npm publish --registry https://npm.pkg.github.com --provenance=false --ignore-scripts
-          git checkout package.json
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)."
+
+  # Also list the package on the repository page. GitHub Packages needs a scoped
+  # name, and uses the workflow token. A failure here never blocks the npm release.
+  github-packages:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com
+          scope: "@efforthye"
+      - run: npm ci
+      - name: Publish as @efforthye/midnight-shield
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          npm pkg set name=@efforthye/midnight-shield
+          npm pkg delete publishConfig.provenance
+          npm publish --ignore-scripts

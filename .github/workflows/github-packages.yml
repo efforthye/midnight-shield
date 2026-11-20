@@ -1,0 +1,36 @@
+name: GitHub Packages
+
+# Lists an already released version on the repository page (GitHub Packages)
+# without making a new release. Run it from the Actions tab.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Released tag to publish, for example v0.5.0
+        required: true
+        default: v0.5.0
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com
+          scope: "@efforthye"
+      - run: npm ci
+      - name: Publish as @efforthye/midnight-shield
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          npm pkg set name=@efforthye/midnight-shield
+          npm pkg delete publishConfig.provenance
+          npm publish --ignore-scripts
