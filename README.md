@@ -10,8 +10,8 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 [![CI](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
-![Rules](https://img.shields.io/badge/rules-20-purple)
-![Tests](https://img.shields.io/badge/tests-159%20passing-brightgreen)
+![Rules](https://img.shields.io/badge/rules-51-purple)
+![Tests](https://img.shields.io/badge/tests-310%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
 
@@ -51,6 +51,11 @@ The Compact compiler already stops you from disclosing witness data by accident.
 | `transientHash` stored in the ledger | Stored values may stop matching after an upgrade | [MS012](docs/rules/MS012.md) |
 | `Math.random()` for a salt or nonce | The value can be predicted | [MS105](docs/rules/MS105.md) |
 | Seed sent to a server with `fetch` | The server, proxies and logs can read it | [MS106](docs/rules/MS106.md) |
+| Nullifier checked but never stored | The same member can claim again and again | [MS018](docs/rules/MS018.md) |
+| Nullifier built like the Merkle leaf | Anyone can see which member acted | [MS021](docs/rules/MS021.md) |
+| Unguarded `sendShielded` or mint | Anyone can drain the contract or mint tokens | [MS019](docs/rules/MS019.md), [MS020](docs/rules/MS020.md) |
+| Witness implemented as `new Uint8Array(32)` | The contract's "randomness" is all zeros | [MS113](docs/rules/MS113.md) |
+| Seed in a `VITE_` variable | The bundler ships it to every visitor | [MS119](docs/rules/MS119.md) |
 
 Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint** is to Noir: a static analyzer that catches issues before deploy, with rules built around Midnight's privacy model.
 
@@ -60,7 +65,7 @@ Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint*
 - 🗺️ **Disclosure map.** One table of everything your contract makes public, and whether it is raw, hashed or committed. Unique to Midnight.
 - 🎲 **Entropy-aware.** Knows a `Boolean` vote has 1 bit of secret entropy and a `Bytes<32>` key has 256, so it flags brute-forceable hashes without crying wolf.
 - 🎯 **Honest about certainty.** Every finding has a severity *and* a confidence. Rules that rely on names or guess intent say so.
-- 🧪 **Verified on real code, in CI.** 1,052 files of the official examples and OpenZeppelin Contracts for Compact (Compact and TypeScript) at pinned commits: zero parse errors, and every medium-or-worse finding reviewed by hand. Examples are compiled with the real Compact compiler.
+- 🧪 **Measured, in CI.** A labeled benchmark of vulnerable, tricky and safe code reports precision and recall per rule, with every known miss listed ([results](bench/RESULTS.md)). 1,052 real files of the official examples and OpenZeppelin Contracts for Compact parse with zero errors, and each medium-or-worse finding on them is checked by hand. Examples are compiled with the real Compact compiler.
 - 🔁 **Privacy diff on every pull request.** The GitHub Action comments what a change newly makes public and which findings it adds or fixes, before it is merged.
 - 🩹 **Suggested fixes.** Each finding comes with the flagged line rewritten, as a diff you can copy.
 - 🧰 **Everywhere you work.** CLI, web playground, VS Code, GitHub Action with SARIF, Markdown reports, Claude Code skill, plugin API.
@@ -227,6 +232,24 @@ npx midnight-shield contracts/ --format json                    # scripts and AI
 | [MS012](docs/rules/MS012.md) | `transient-hash-in-state` | 🟡 Medium | high | A `transientHash` / `transientCommit` result stored in the ledger |
 | [MS013](docs/rules/MS013.md) | `witness-controlled-assert` | 🔴 High | high | An `assert` that only checks a `Boolean` the prover supplies through a witness |
 | [MS014](docs/rules/MS014.md) | `commitment-randomness-disclosed` | 🔴 High | medium | The randomness of a commitment made public outside a commit-reveal opening |
+| [MS015](docs/rules/MS015.md) | `unused-witness` | ⚪ Info | high | A witness is declared but never called; often a sign of a missing check |
+| [MS016](docs/rules/MS016.md) | `unused-circuit` | ⚪ Info | high | A circuit that is not exported is never called, so it is dead code |
+| [MS017](docs/rules/MS017.md) | `tautological-assert` | 🟡 Medium | high | An assert can never fail (assert(true), x == x, an unsigned value >= 0), so it checks nothing |
+| [MS018](docs/rules/MS018.md) | `nullifier-not-checked` | 🔴 High | medium | A value is added to a nullifier set without first checking that it is not already there, so it can be used again |
+| [MS019](docs/rules/MS019.md) | `unguarded-token-send` | 🔴 High | medium | An exported circuit sends tokens and checks nothing, so anyone can move the contract's funds |
+| [MS020](docs/rules/MS020.md) | `unguarded-mint` | 🔴 High | medium | An exported circuit mints tokens and checks nothing, so anyone can mint any amount |
+| [MS021](docs/rules/MS021.md) | `nullifier-matches-leaf` | 🔴 High | medium | A nullifier is built from the same tag and inputs as a Merkle leaf, so it reveals which member acted |
+| [MS022](docs/rules/MS022.md) | `shadowed-ledger-field` | 🔵 Low | high | A parameter or local constant has the same name as a ledger field and hides it |
+| [MS023](docs/rules/MS023.md) | `secret-key-as-randomness` | 🔴 High | medium | A long-term secret key is used as commitment randomness, so opening the commitment reveals the key |
+| [MS024](docs/rules/MS024.md) | `constant-condition` | 🟡 Medium | high | An if on a constant, or assert(false): one branch is dead or the circuit always fails |
+| [MS025](docs/rules/MS025.md) | `write-after-write` | 🟡 Medium | high | A ledger field is written twice in a row with no read in between, so the first write has no effect |
+| [MS026](docs/rules/MS026.md) | `shadowed-builtin` | 🔵 Low | high | A circuit, witness, parameter or local hides a standard-library name such as disclose or persistentHash |
+| [MS027](docs/rules/MS027.md) | `ignored-check-result` | 🔴 High | high | A Boolean check (a member test, a helper returning Boolean) is called but its result is thrown away |
+| [MS028](docs/rules/MS028.md) | `locked-tokens` | 🟡 Medium | medium | The contract receives tokens but no circuit sends any out, so deposits are locked |
+| [MS029](docs/rules/MS029.md) | `no-effect-statement` | 🔵 Low | high | A statement computes a value and does nothing with it |
+| [MS030](docs/rules/MS030.md) | `bidi-control-character` | 🔴 High | high | An invisible text-direction character can make code read differently from how it runs (Trojan Source) |
+| [MS031](docs/rules/MS031.md) | `field-arithmetic-overflow` | 🔴 High | medium | Arithmetic on a Field ledger value wraps around silently instead of failing |
+| [MS032](docs/rules/MS032.md) | `unused-local` | ⚪ Info | high | A local constant is computed but never used |
 
 **DApp code (TypeScript / JavaScript)**
 
@@ -238,6 +261,19 @@ npx midnight-shield contracts/ --format json                    # scripts and AI
 | [MS104](docs/rules/MS104.md) | `private-state-in-browser-storage` | 🔴 High | medium | Private state or a secret saved to `localStorage` / `sessionStorage` |
 | [MS105](docs/rules/MS105.md) | `insecure-randomness` | 🔴 High | medium | A secret, seed, nonce or salt made with `Math.random()` |
 | [MS106](docs/rules/MS106.md) | `secret-sent-over-network` | 🔴 High | medium | A seed or secret key sent with `fetch`, `axios` or another HTTP client |
+| [MS107](docs/rules/MS107.md) | `tls-verification-disabled` | 🔴 High | high | TLS certificate checks are turned off |
+| [MS108](docs/rules/MS108.md) | `dynamic-code-execution` | 🔴 High | medium | Eval, new Function or a string passed to setTimeout runs a string as code |
+| [MS109](docs/rules/MS109.md) | `insecure-transport` | 🟡 Medium | medium | A remote indexer or node is reached over unencrypted http:// or ws:// |
+| [MS110](docs/rules/MS110.md) | `secret-in-error` | 🟡 Medium | medium | A secret key, seed or password is put into an error message |
+| [MS111](docs/rules/MS111.md) | `secret-written-to-file` | 🟡 Medium | medium | A secret key, seed or password is written to a file unencrypted |
+| [MS112](docs/rules/MS112.md) | `postmessage-wildcard` | 🟡 Medium | high | PostMessage sends data to any origin ("*") |
+| [MS113](docs/rules/MS113.md) | `weak-witness-randomness` | 🟣 Critical | medium | A witness implementation returns zero bytes or a clock value where the contract expects secret randomness |
+| [MS114](docs/rules/MS114.md) | `secret-in-url` | 🔴 High | medium | A secret is put into the page URL, query string or browser history |
+| [MS115](docs/rules/MS115.md) | `hardcoded-password` | 🔴 High | medium | A password or passphrase (for example for the private state store) is written into the source |
+| [MS116](docs/rules/MS116.md) | `secret-rendered-in-ui` | 🟡 Medium | medium | A secret is rendered on screen in JSX |
+| [MS117](docs/rules/MS117.md) | `secret-sent-to-analytics` | 🔴 High | medium | A secret is passed to an analytics or error-tracking call |
+| [MS118](docs/rules/MS118.md) | `unsafe-html` | 🟡 Medium | medium | HTML from a variable is written into the page (innerHTML, dangerouslySetInnerHTML, document.write) |
+| [MS119](docs/rules/MS119.md) | `secret-in-public-env` | 🟣 Critical | high | A secret is read from a VITE_/NEXT_PUBLIC_/REACT_APP_ variable, which the bundler ships to every visitor |
 
 Need a rule for your own conventions? [Write a plugin](docs/custom-rules.md).
 
@@ -312,6 +348,8 @@ jobs:
           fail-on: high
           badge: true
 ```
+
+`@main` picks up changes as soon as they are merged. To decide when updates reach your CI, pin a release tag or a commit SHA once a release includes the inputs you use.
 
 What it does:
 
@@ -395,6 +433,63 @@ Other:      --list-rules  -v, --version  -h, --help
 
 Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` usage or config error.
 
+## Accuracy
+
+**Benchmark.** 123 labeled files: 74 expected findings reported, 3 missed, 0 false positives. Overall:
+
+| Rule | Found | Missed | False positives | Precision | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **All** | **74** | **3** | **0** | **100%** | **96%** |
+
+The cases are written by the author and are not an independent audit; their value is the list of what each rule catches and misses. The per-rule table and the known misses are in [bench/RESULTS.md](bench/RESULTS.md), and new cases (especially ones that break a rule) are welcome. Each rule's page also has a **Known limits** section.
+
+**Found in a public project.** Scanning [MeshJS/midnight-contracts-wizard](https://github.com/MeshJS/midnight-contracts-wizard) (contract templates that developers copy, commit `a1f868d`) found access checks that a caller can bypass. Each was checked by hand against the source:
+
+| Contract | Rule | What a caller can do |
+| --- | --- | --- |
+| `lending-borrowing` | MS013, MS009 | Borrow with no collateral: the health-factor check is a witness that returns `true` on request, and the collateral Merkle path is not tied to the caller |
+| `lending-borrowing` | MS013, MS009 | Liquidate any position, and withdraw collateral, through the same pattern |
+| `oracle` | MS009, MS013 | Write prices as any operator (another operator's public path passes), and pass the signature check, which is a witness |
+| `staking` | MS013 | Skip the balance check and the lock-up period, both witnesses |
+| `tokenization` | MS013, MS009 | Pass the project-expiry check and the investor membership check |
+
+The same scan also showed false positives, which led to fixes: a secret passed through `disclose()` straight into a hash or commitment is no longer reported (MS007, MS004, MS014), because only the result becomes public.
+
+**Official examples.** On 1,052 files of the official Midnight examples and OpenZeppelin Contracts for Compact, the medium-or-worse findings are all checked by hand ([verify/reviewed.json](verify/reviewed.json)):
+
+| Rule | Where | What it is |
+| --- | --- | --- |
+| MS104 | `leaderboard` example | The player's secret key is kept in `localStorage`, where any script on the page can read it |
+| MS019, MS020 | `token-transfers`, `private-tip-jar` examples | Anyone can mint or send the demo tokens; deliberate in demos, and what the rules are for in real contracts |
+| MS019 | OpenZeppelin `MockUnshieldedTreasury` | A test mock that sends without checks on purpose |
+
+Building the newer rules also turned up a parser bug (`default<T> as U`) that the corpus run now covers.
+
+## Coverage compared with other analyzers
+
+Rules were checked against the detector lists of [Slither](https://github.com/crytic/slither/wiki/Detector-Documentation) (Solidity) and [Circomspect](https://github.com/trailofbits/circomspect) (Circom). Where a detector's bug class exists in Compact, there is a rule for it:
+
+| Bug class | Slither / Circomspect | Midnight Shield |
+| --- | --- | --- |
+| Unprotected value transfer | `arbitrary-send-eth` | MS019 |
+| Unprotected privileged change | `protected-vars`, `suicidal` | MS011, MS020 |
+| Caller identity from an untrusted source | `tx-origin` | MS001, MS013 |
+| Weak randomness | `weak-prng` | MS004, MS105, MS113 |
+| Tautologies | `tautology`, `tautological-compare` | MS017 |
+| Constant conditions | `boolean-cst`, constant branch | MS024 |
+| Ignored return values | `unused-return`, `unchecked-transfer` | MS027 |
+| Locked funds | `locked-ether` | MS028 |
+| Overwritten state | `write-after-write` | MS025 |
+| Shadowing | `shadowing-state`, `shadowing-builtin`, `shadowing-local` | MS022, MS026 |
+| Dead code and unused values | `dead-code`, `unused-state`, unused variables | MS015, MS016, MS032 |
+| Statements with no effect | `redundant-statements` | MS029 |
+| Hidden text-direction characters | `rtlo` | MS030 |
+| Arithmetic that wraps | field arithmetic (Circomspect) | MS031 |
+| Unconstrained private inputs | under-constrained signals (Circomspect) | MS002, MS009 |
+| Compiler version | `solc-version`, `pragma` | MS006 |
+
+Detectors for things Compact does not have (reentrancy, `delegatecall`, gas, inline assembly, inheritance, ERC interfaces, events) have no counterpart. On top of the shared bug classes, about half of the rules cover Midnight's privacy model, which the other tools do not deal with: disclosure of secrets (MS003, MS007, MS014, MS021, MS023), nullifiers (MS008, MS018), Merkle membership (MS009, MS010), transient hashes (MS012), and the DApp side where witnesses and private state live (MS101–MS119).
+
 ## Where it fits
 
 Midnight Shield works alongside the tools you already use. Each does a different job:
@@ -411,9 +506,10 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 
 | Check | What it proves | Command |
 | --- | --- | --- |
-| **Unit and integration tests** (159 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
+| **Unit and integration tests** (310 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
+| **Benchmark** | 123 labeled files: the plain vulnerable pattern for each rule, variants written to evade it (aliases, helper circuits, wrappers, other names), and safe code that looks similar. Precision and recall per rule, and every known miss, in [bench/RESULTS.md](bench/RESULTS.md) | `npm run bench` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
-| **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is a confirmed one listed in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
+| **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is checked by hand and listed with the reason in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |
 | **Package** | The npm tarball installs and the CLI runs | CI job `package` |
 
@@ -426,7 +522,10 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 - [x] **v0.3** Merkle and secret rules, corpus verification, real-compiler CI
 - [x] **v0.4** Disclosure map, confidence, baselines, Markdown, plugins, autofix, TypeScript checks, playground, VS Code extension, npm package
 - [x] **v0.5** Repository and folder scanning in the playground, project logo, GitHub Packages
-- [x] **Next** Privacy diff on pull requests, status badge, suggested fixes, MS011–MS014 / MS103–MS106
+- [x] **Next** Privacy diff on pull requests, status badge, suggested fixes, accuracy benchmark, 51 rules (MS011–MS032, MS103–MS119)
+- [ ] Witness implementations checked against the contract that declares them (beyond MS113)
+- [ ] MCP server and language server
+- [ ] Ignore comments with a recorded reason, and strict / recommended presets
 - [ ] VS Code Marketplace release
 - [ ] Data-flow facts for plugins
 - [ ] More rules from community feedback

@@ -17,7 +17,21 @@ All notable changes to this project are documented here. The format follows [Kee
 - **MS014 commitment-randomness-disclosed**: the randomness of a commitment made public outside a commit-reveal opening.
 - **MS105 insecure-randomness**: a secret, seed, nonce or salt made with `Math.random()`.
 - **MS106 secret-sent-over-network**: a seed or secret key sent with `fetch`, `axios` or another HTTP client.
+- **31 more rules (51 in total).**
+  - Compact, bug classes that other chains' analyzers cover: MS015 unused-witness, MS016 unused-circuit, MS017 tautological-assert, MS019 unguarded-token-send, MS020 unguarded-mint, MS022 shadowed-ledger-field, MS024 constant-condition, MS025 write-after-write, MS026 shadowed-builtin, MS027 ignored-check-result, MS028 locked-tokens, MS029 no-effect-statement, MS030 bidi-control-character (also TypeScript), MS031 field-arithmetic-overflow, MS032 unused-local.
+  - Compact, Midnight privacy: MS018 nullifier-not-checked (no membership check before the insert, or a check with no insert), MS021 nullifier-matches-leaf, MS023 secret-key-as-randomness.
+  - DApp: MS107 tls-verification-disabled, MS108 dynamic-code-execution, MS109 insecure-transport, MS110 secret-in-error, MS111 secret-written-to-file, MS112 postmessage-wildcard, MS113 weak-witness-randomness (a witness implementation that returns zero bytes or a clock value), MS114 secret-in-url, MS115 hardcoded-password, MS116 secret-rendered-in-ui, MS117 secret-sent-to-analytics, MS118 unsafe-html, MS119 secret-in-public-env.
+- **Accuracy benchmark.** `npm run bench` reports precision and recall per rule on 123 labeled files (vulnerable, evasive variants, look-alike safe code) and lists every known miss in `bench/RESULTS.md`. The same cases run in `npm test`.
+- Every heuristic rule's page has a **Known limits** section.
 - Corpus verification accepts findings confirmed by hand in `verify/reviewed.json`. The first one: the official leaderboard example keeps the player's secret key in `localStorage` (MS104).
+
+### Fixed
+
+- Found by external reviews: MS013 now also checks `if (witness())` and witnesses passed through a helper circuit; MS014 catches randomness taken from a circuit parameter; MS007 recognizes `privKey`, `signingKey` and `spendingKey`; MS104 checks IndexedDB-style stores and `idb-keyval`; MS105 follows `Math.random()` through variables and wrappers; MS106 checks WebSocket and socket `send`; MS102 no longer reports `typeof seed`.
+- MS011 also reports owner or admin fields that nothing compares yet (low confidence), so a contract whose only owner logic is `owner = disclose(k)` is no longer silent.
+- MS019/MS020 no longer count an assert on parameters alone (`assert(amount <= 100)`) as a caller check.
+- The parser read `default<Bytes<32>> as T` as comparisons.
+- Fewer false positives found on a real project: `disclose()` only allows a value to become public, so MS007 now reports a raw secret where it is actually written to the ledger or returned, and a secret or randomness passed through `disclose()` straight into a hash or commitment is no longer reported by MS007, MS004 or MS014.
 
 ## [0.5.0] - 2026-11-20
 
