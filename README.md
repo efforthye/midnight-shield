@@ -16,7 +16,7 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
 [![Scan with Midnight Shield](https://img.shields.io/badge/scan%20with-Midnight%20Shield-6d5ce7)](https://efforthye.github.io/midnight-shield/#repo=efforthye/midnight-shield)
 
-[Quick start](#quick-start) · [Web playground](#web-playground) · [Rules](#rules) · [Disclosure map](#disclosure-map) · [Editor](#vs-code) · [CI](#github-action) · [AI agents](#use-with-ai-coding-agents) · [Verification](#testing-and-verification)
+[Quick start](#quick-start) · [Web playground](#web-playground) · [Rules](#rules) · [Disclosure map](#disclosure-map) · [Editor](#vs-code) · [CI](#github-action) · [AI agents](#use-with-ai-coding-agents) · [Verification](#testing-and-verification) · [Pitch deck](#presentation)
 
 <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/demo.png" alt="Midnight Shield scanning a vulnerable Compact contract" width="820">
 
@@ -357,7 +357,7 @@ Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` 
 
 | Check | What it proves | Command |
 | --- | --- | --- |
-| **Unit and integration tests** (120 tests, 96% line coverage of `src/`) | Lexer, parser, every rule (flagged and not-flagged cases), reporters, CLI, baselines, plugins, fixes | `npm test`, `npm run coverage` |
+| **Unit and integration tests** (125 tests, 96% line coverage of `src/`) | Lexer, parser, every rule (flagged and not-flagged cases), reporters, CLI, baselines, plugins, fixes | `npm test`, `npm run coverage` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
 | **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, no medium-or-worse findings, results match a reviewed baseline | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |
@@ -371,6 +371,7 @@ Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` 
 - [x] **v0.2** Imported modules, code frames, config file, Claude Code skill
 - [x] **v0.3** Merkle and secret rules, corpus verification, real-compiler CI
 - [x] **v0.4** Disclosure map, confidence, baselines, Markdown, plugins, autofix, TypeScript checks, playground, VS Code extension, npm package
+- [x] **v0.5** Repository and folder scanning in the playground, project logo, GitHub Packages
 - [ ] VS Code Marketplace release
 - [ ] Data-flow facts for plugins
 - [ ] More rules from community feedback
@@ -389,6 +390,13 @@ npm run demo        # scan examples/
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [CHANGELOG.md](CHANGELOG.md).
+
+## Presentation
+
+The pitch deck from KR NightForce Cohort 2: the problem, the solution, how it compares and how it was verified.
+
+- [Slides (PDF)](presentation/midnight-shield-pitch.pdf)
+- [Slides with the speaker script in English and Korean (PDF)](presentation/midnight-shield-pitch-with-script.pdf)
 
 ## Acknowledgements
 
