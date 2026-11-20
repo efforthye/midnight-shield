@@ -7,7 +7,7 @@ import type { Program } from "./ast.js";
 import { lintSource, type Finding, type LintOptions } from "./linter.js";
 import { parse } from "./parser.js";
 import { SEVERITY_ORDER } from "./rules.js";
-import { isSdkFile } from "./sdk.js";
+import { isSdkFile, isTestFile } from "./sdk.js";
 
 /** Directories that hold dependencies or generated code, never the project's own sources. */
 export const IGNORED_DIRS = ["node_modules", ".git", "dist", "build", "managed", "coverage", ".cache"];
@@ -43,7 +43,16 @@ export function isScannableFile(path: string, sdk = true): boolean {
   const segments = path.split("/");
   if (segments.slice(0, -1).some((d) => IGNORED_DIRS.includes(d) || d.startsWith("."))) return false;
   if (path.endsWith(".compact")) return true;
-  return sdk && isSdkFile(path) && !path.endsWith(".min.js");
+  return sdk && isSdkFile(path) && !path.endsWith(".min.js") && !isTestFile(path);
+}
+
+/**
+ * Whether TypeScript/JavaScript source belongs to a Midnight DApp: it uses the
+ * Midnight SDK, a proof provider or a wallet. Used to leave unrelated scripts
+ * and tooling out of a repository scan.
+ */
+export function usesMidnightSdk(source: string): boolean {
+  return /@midnight-ntwrk\/|midnight-js|ProofProvider|proofServer|proof[-_ ]server|WalletBuilder|wallet\.(seed|mnemonic)/i.test(source);
 }
 
 /** Normalize a POSIX path, resolving `.` and `..` segments. */

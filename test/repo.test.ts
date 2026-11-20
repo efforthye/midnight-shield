@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { lintFiles } from "../src/node.js";
-import { isScannableFile, lintFileMap, parseRepoUrl } from "../src/repo.js";
+import { isScannableFile, lintFileMap, parseRepoUrl, usesMidnightSdk } from "../src/repo.js";
 
 describe("repository scanning (playground)", () => {
   it("reads GitHub repository references in common forms", () => {
@@ -24,6 +24,16 @@ describe("repository scanning (playground)", () => {
     assert.ok(!isScannableFile(".github/scripts/a.ts"));
     assert.ok(!isScannableFile("types/a.d.ts"));
     assert.ok(!isScannableFile("README.md"));
+    assert.ok(!isScannableFile("api/src/index.test.ts"));
+    assert.ok(!isScannableFile("test/helpers.ts"));
+  });
+
+  it("keeps DApp code and leaves unrelated TypeScript out", () => {
+    assert.ok(usesMidnightSdk('import { WalletBuilder } from "@midnight-ntwrk/wallet";'));
+    assert.ok(usesMidnightSdk(readFileSync("examples/dapp/vulnerable.ts", "utf8")));
+    assert.ok(usesMidnightSdk(readFileSync("examples/dapp/safe.ts", "utf8")));
+    assert.ok(!usesMidnightSdk(readFileSync("src/lexer.ts", "utf8")));
+    assert.ok(!usesMidnightSdk(readFileSync("scripts/run-tests.mjs", "utf8")));
   });
 
   it("resolves imports between files in memory, like the CLI does on disk", () => {

@@ -5,6 +5,7 @@ import {
   memoryImportResolver,
   parseRepoUrl,
   isScannableFile,
+  usesMidnightSdk,
   formatMarkdown,
   VERSION,
   type Finding,
@@ -226,6 +227,14 @@ fileSelect.addEventListener("change", () => openFile(fileSelect.value));
 
 // ---------------------------------------------------------------- projects
 
+/** Keep contracts and DApp code; leave out TypeScript/JavaScript that doesn't touch the Midnight SDK. */
+function relevant(entries: [string, string][], notes: string[]): [string, string][] {
+  const keep = entries.filter(([p, src]) => p.endsWith(".compact") || usesMidnightSdk(src));
+  const skipped = entries.length - keep.length;
+  if (skipped) notes.push(`Skipped ${skipped} TypeScript/JavaScript file${skipped === 1 ? " that doesn't" : "s that don't"} use the Midnight SDK.`);
+  return keep;
+}
+
 /** Order files: contracts first, then by path. */
 function sortedFiles(entries: [string, string][]): Map<string, string> {
   return new Map(entries.sort(([a], [b]) => Number(b.endsWith(".compact")) - Number(a.endsWith(".compact")) || a.localeCompare(b)));
@@ -302,7 +311,8 @@ async function scanRepo(ref: RepoRef): Promise<void> {
     await new Promise((r) => setTimeout(r, 20));
     busy = false;
     const name = `${ref.owner}/${ref.repo}${prefix ? `/${prefix}` : ""}`;
-    openProject({ name, repo: { ...ref, ref: branch }, files: sortedFiles(entries), note: notes.join(" ") || undefined });
+    const kept = relevant(entries, notes);
+    openProject({ name, repo: { ...ref, ref: branch }, files: sortedFiles(kept), note: notes.join(" ") || undefined });
     history.replaceState(null, "", `#repo=${ref.owner}/${ref.repo}${ref.ref || prefix ? `/tree/${branch}${prefix ? `/${prefix}` : ""}` : ""}`);
   } catch (err) {
     showError((err as Error).message || "Could not reach GitHub.");
@@ -333,11 +343,10 @@ async function openLocal(list: FileList | null, label: string): Promise<void> {
   progress(`Reading ${picked.length} files…`);
   const entries = await Promise.all(picked.slice(0, MAX_FILES).map(async (f) => [relPath(f), await f.text()] as [string, string]));
   const root = (files[0] as File & { webkitRelativePath?: string }).webkitRelativePath?.split("/")[0];
-  openProject({
-    name: root || label,
-    files: sortedFiles(entries),
-    note: picked.length > MAX_FILES ? `Opened the first ${MAX_FILES} of ${picked.length} files.` : undefined,
-  });
+  const notes: string[] = picked.length > MAX_FILES ? [`Opened the first ${MAX_FILES} of ${picked.length} files.`] : [];
+  // files picked one by one are always kept; a folder is filtered like a repository
+  const kept = root ? relevant(entries, notes) : entries;
+  openProject({ name: root || label, files: sortedFiles(kept), note: notes.join(" ") || undefined });
 }
 
 $("openFiles").addEventListener("click", () => $<HTMLInputElement>("fileInput").click());

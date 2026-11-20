@@ -1,6 +1,6 @@
 // Library entry point (Node.js). The browser playground uses src/browser.ts.
 export { lintSource, mapDisclosures, createBaseline, type Finding, type LintOptions, type DisclosureEntry, type BaselineFile } from "./linter.js";
-export { parseRepoUrl, isScannableFile, lintFileMap, memoryImportResolver, type RepoRef } from "./repo.js";
+export { parseRepoUrl, isScannableFile, usesMidnightSdk, lintFileMap, memoryImportResolver, type RepoRef } from "./repo.js";
 export { lintFiles, mapDisclosuresInFiles, listTargetFiles, findCompactFiles, fileImportResolver, readBaseline, globToRegExp } from "./node.js";
 export { loadConfig, validateConfig, DEFAULT_CONFIG, type Config } from "./config.js";
 export { loadPlugins } from "./plugin-loader.js";
