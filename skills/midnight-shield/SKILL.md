@@ -5,7 +5,7 @@ description: Scan Midnight Compact contracts for security and privacy bugs with 
 
 # Midnight Shield: scan, fix, re-scan
 
-Midnight Shield is a static analyzer for Compact. It finds bugs that compile but are unsafe: fake authorization with `ownPublicKey()`, unchecked witnesses, brute-forceable hashes, weak commitments, and hashes without domain tags.
+Midnight Shield is a static analyzer for Compact. It finds bugs that compile but are unsafe: fake authorization with `ownPublicKey()`, unchecked witnesses, brute-forceable hashes, weak commitments, hashes without domain tags, owner changes without a caller check, and, in DApp code, remote proof servers and leaked seeds.
 
 ## When to run it
 
@@ -18,16 +18,16 @@ Midnight Shield is a static analyzer for Compact. It finds bugs that compile but
 Run from the project root and read the JSON report:
 
 ```bash
-npx github:efforthye/midnight-shield <contracts-dir> --format json --fail-on none
+npx midnight-shield <contracts-dir> --format json --fail-on none
 ```
 
-Each finding has `ruleId`, `severity`, `confidence`, `message`, `file`, `line`, `col`, `snippet`, and `docUrl`. Treat `low` confidence findings as questions to check, not certain bugs.
+Each finding has `ruleId`, `severity`, `confidence`, `message`, `file`, `line`, `col`, `snippet`, `docUrl` and, for most rules, a `suggestion` (`before` and `after` lines and a `note`). Treat `low` confidence findings as questions to check, not certain bugs.
 
 To see everything the contract makes public, run `--print disclosures`. Any `RAW` row is private data published as is: check that it is meant to be public.
 
 ## Step 2: Fix, most severe first
 
-Work through findings in order: critical, high, medium, low, info. For each one, open the rule page at `docUrl` if the fix is not obvious.
+Work through findings in order: critical, high, medium, low, info. For each one, start from `suggestion`: it rewrites the flagged line, with placeholders such as `myapp` for names you must choose from the project (a domain tag, a witness). Adapt it to the code, and open the rule page at `docUrl` if the fix is not obvious.
 
 | Rule | Fix |
 | --- | --- |

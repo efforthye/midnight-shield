@@ -10,15 +10,15 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 [![CI](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
-![Rules](https://img.shields.io/badge/rules-12-purple)
-![Tests](https://img.shields.io/badge/tests-125%20passing-brightgreen)
+![Rules](https://img.shields.io/badge/rules-15-purple)
+![Tests](https://img.shields.io/badge/tests-148%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
-[![Scan with Midnight Shield](https://img.shields.io/badge/scan%20with-Midnight%20Shield-6d5ce7)](https://efforthye.github.io/midnight-shield/#repo=efforthye/midnight-shield)
+[![Playground](https://img.shields.io/badge/playground-try%20in%20your%20browser-6d5ce7)](https://efforthye.github.io/midnight-shield/)
 
 [Quick start](#quick-start) · [Web playground](#web-playground) · [Rules](#rules) · [Disclosure map](#disclosure-map) · [Editor](#vs-code) · [CI](#github-action) · [AI agents](#use-with-ai-coding-agents) · [Verification](#testing-and-verification) · [Pitch deck](#presentation)
 
-<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/demo.png" alt="Midnight Shield scanning a vulnerable Compact contract" width="820">
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/demo.png?v=2" alt="Midnight Shield scanning a vulnerable Compact contract" width="820">
 
 **[▶ Try it in your browser](https://efforthye.github.io/midnight-shield/)** · no install, your code never leaves the page
 
@@ -43,7 +43,10 @@ The Compact compiler already stops you from disclosing witness data by accident.
 | Merkle root checked, leaf never checked | Anyone can reuse another member's public path | [MS009](docs/rules/MS009.md) |
 | Same member tag in every circuit | Anonymous members' actions can be linked together | [MS010](docs/rules/MS010.md) |
 | Remote proof server in the DApp | A third party sees every user's private inputs | [MS101](docs/rules/MS101.md) |
+| Owner change with no caller check | Anyone can make themselves the owner or an admin | [MS011](docs/rules/MS011.md) |
 | Wallet seed in a log | The seed ends up in CI logs and crash reports | [MS102](docs/rules/MS102.md) |
+| Wallet seed in the source | Anyone who reads the repo or the web bundle can use it | [MS103](docs/rules/MS103.md) |
+| Private state in `localStorage` | Any script on the page can read users' private data | [MS104](docs/rules/MS104.md) |
 
 Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint** is to Noir: a static analyzer that catches issues before deploy, with rules built around Midnight's privacy model.
 
@@ -53,7 +56,9 @@ Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint*
 - 🗺️ **Disclosure map.** One table of everything your contract makes public, and whether it is raw, hashed or committed. Unique to Midnight.
 - 🎲 **Entropy-aware.** Knows a `Boolean` vote has 1 bit of secret entropy and a `Bytes<32>` key has 256, so it flags brute-forceable hashes without crying wolf.
 - 🎯 **Honest about certainty.** Every finding has a severity *and* a confidence. Rules that rely on names or guess intent say so.
-- 🧪 **Verified on real code, in CI.** 1,052 files of the official examples and OpenZeppelin Contracts for Compact (Compact and TypeScript) at pinned commits: zero parse errors, zero medium-or-worse findings. Examples are compiled with the real Compact compiler.
+- 🧪 **Verified on real code, in CI.** 1,052 files of the official examples and OpenZeppelin Contracts for Compact (Compact and TypeScript) at pinned commits: zero parse errors, and every medium-or-worse finding reviewed by hand. Examples are compiled with the real Compact compiler.
+- 🔁 **Privacy diff on every pull request.** The GitHub Action comments what a change newly makes public and which findings it adds or fixes, before it is merged.
+- 🩹 **Suggested fixes.** Each finding comes with the flagged line rewritten, as a diff you can copy.
 - 🧰 **Everywhere you work.** CLI, web playground, VS Code, GitHub Action with SARIF, Markdown reports, Claude Code skill, plugin API.
 - 🏗️ **Easy to adopt.** Baselines accept existing findings so CI only fails on new ones. Zero runtime dependencies.
 
@@ -92,23 +97,20 @@ The full analyzer, compiled to run in the browser. Check your own project in thr
 
 There is no server: the page is static, and your code stays in your browser. Public repositories only.
 
-<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-repo.png?v=3" alt="Scanning a whole repository in the playground" width="820">
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-repo.png?v=4" alt="Scanning a whole repository in the playground" width="820">
 
 | Findings with fixes | Disclosure map |
 | --- | --- |
-| <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground.png?v=3" alt="Playground findings" width="400"> | <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-disclosures.png?v=3" alt="Playground disclosure map" width="400"> |
+| <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground.png?v=4" alt="Playground findings" width="400"> | <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/playground-disclosures.png?v=4" alt="Playground disclosure map" width="400"> |
 
+- **Suggested fixes** under each finding, as a diff with a **Copy fix** button
 - **Whole-project results** grouped by file. Click a finding to open that file at the line
 - **Disclosure map** tab: every value that becomes public, and whether it is raw, hashed or committed
 - **Share link**: a repository scan is shared as `…/#repo=owner/repo`, so anyone can rerun it; pasted code is stored in the link itself
 - **Download report** as Markdown for an audit note or a PR comment
 - Examples, severity filter, light and dark themes, and a mobile layout
 
-Link to a scan of your project from your own README:
-
-```markdown
-[![Scan with Midnight Shield](https://img.shields.io/badge/scan%20with-Midnight%20Shield-6d5ce7)](https://efforthye.github.io/midnight-shield/#repo=OWNER/REPO)
-```
+Show your project's status in its README with a badge that updates on every push (set up in the [GitHub Action](#status-badge)). It looks like ![no issues](https://img.shields.io/badge/midnight%20shield-no%20issues-brightgreen?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=) or ![2 high](https://img.shields.io/badge/midnight%20shield-2%20high-red?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=) and opens the scan in the playground when clicked.
 
 To run it locally: `npm run playground` builds a single file at `playground/dist/index.html` that you can open directly.
 
@@ -133,7 +135,15 @@ npx midnight-shield explain MS009   # read a rule's documentation in the termina
 
 ### 3. Fix and scan again
 
-Every rule page shows a vulnerable and a fixed example. Safe fixes can be applied automatically:
+Each finding shows a **suggested fix**: the flagged line rewritten, as a diff. Names only you can choose (a domain tag, a witness) appear as placeholders such as `myapp`. Every rule page also shows a vulnerable and a fixed example.
+
+```text
+  Suggested fix
+    - committed = persistentCommit<Uint<64>>(amount, salt);
+    + committed = persistentCommit<Uint<64>>(amount, randomness());
+```
+
+Safe fixes can be applied automatically:
 
 ```bash
 npx midnight-shield contracts/ --fix-dry-run   # see what would change
@@ -193,7 +203,7 @@ npx midnight-shield contracts/ --format json                    # scripts and AI
 
 ## Rules
 
-<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/rules.png" alt="midnight-shield --list-rules" width="820">
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/rules.png?v=2" alt="midnight-shield --list-rules" width="820">
 
 **Compact contracts**
 
@@ -209,6 +219,7 @@ npx midnight-shield contracts/ --format json                    # scripts and AI
 | [MS008](docs/rules/MS008.md) | `missing-nullifier` | 🟡 Medium | low | Merkle-authorized state change with no nullifier, so it can be repeated |
 | [MS009](docs/rules/MS009.md) | `unbound-merkle-path` | 🔴 High | high | Merkle root checked, but the path's leaf is never tied to the caller |
 | [MS010](docs/rules/MS010.md) | `linkable-ledger-update` | 🟡 Medium | medium | In an anonymous-membership contract, the same secret-derived tag is published by several circuits |
+| [MS011](docs/rules/MS011.md) | `unguarded-auth-update` | 🔴 High | medium | An exported circuit changes an owner key or admin set without checking the caller |
 
 **DApp code (TypeScript / JavaScript)**
 
@@ -216,6 +227,8 @@ npx midnight-shield contracts/ --format json                    # scripts and AI
 | --- | --- | --- | --- | --- |
 | [MS101](docs/rules/MS101.md) | `remote-proof-server` | 🟣 Critical | medium | The proof server URL points to a remote host |
 | [MS102](docs/rules/MS102.md) | `secret-in-log` | 🔴 High | medium | A seed, secret key or password passed to a log call |
+| [MS103](docs/rules/MS103.md) | `hardcoded-secret` | 🟣 Critical | medium | A seed, secret key or recovery phrase written into the source |
+| [MS104](docs/rules/MS104.md) | `private-state-in-browser-storage` | 🔴 High | medium | Private state or a secret saved to `localStorage` / `sessionStorage` |
 
 Need a rule for your own conventions? [Write a plugin](docs/custom-rules.md).
 
@@ -270,13 +283,17 @@ The extension in [`vscode/`](vscode) shows findings as you type, with links to e
 ```yaml
 # .github/workflows/midnight-shield.yml
 name: Midnight Shield
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 jobs:
   scan:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write        # publish the status badge (or read without badge: true)
+      pull-requests: write   # comment the privacy diff
       security-events: write # show results in the Security tab
     steps:
       - uses: actions/checkout@v4
@@ -284,15 +301,46 @@ jobs:
         with:
           path: contracts
           fail-on: high
+          badge: true
 ```
 
-Findings appear in **Security → Code scanning** and as annotations on pull requests.
+What it does:
+
+- **Every run:** scans, fails the job at `fail-on`, and puts findings in **Security → Code scanning** and as annotations on pull requests.
+- **Pull requests:** comments a **privacy diff** and keeps that one comment up to date as you push.
+- **Pushes to the default branch** (with `badge: true`): updates the status badge.
+
+### Privacy diff
+
+On a pull request, Midnight Shield scans both the base and the change, and comments what the change does to privacy:
+
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/privacy-diff.png" alt="Privacy diff comment on a pull request: one value newly made public as raw, one new MS011 finding" width="760">
+
+Lines that only moved are not reported. A protection that gets weaker (commitment → hash → raw) is marked ⚠️. The same diff works locally:
+
+```bash
+npx midnight-shield snapshot contracts -o base.json   # on main
+npx midnight-shield snapshot contracts -o head.json   # on your branch
+npx midnight-shield diff base.json head.json          # --format markdown|json, --fail-on high
+```
+
+### Status badge
+
+With `badge: true`, each push to the default branch writes the result to a `midnight-shield-badge` branch. Add the badge to your README (replace `OWNER/REPO`):
+
+```markdown
+[![Midnight Shield](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/OWNER/REPO/midnight-shield-badge/badge.json)](https://efforthye.github.io/midnight-shield/#repo=OWNER/REPO)
+```
+
+It shows ![no issues](https://img.shields.io/badge/midnight%20shield-no%20issues-brightgreen?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=) when the scan is clean, or the count of the most severe findings, such as ![2 high](https://img.shields.io/badge/midnight%20shield-2%20high-red?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PG1hc2sgaWQ9Im0iPjxyZWN0IHdpZHRoPSI2NCIgaGVpZ2h0PSI2NCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjM4LjUiIGN5PSIyNS41IiByPSIxMS41IiBmaWxsPSIjMDAwIi8+PC9tYXNrPjxwYXRoIGQ9Ik0zMiA0LjVDMzcuNSA3LjIgNDUuNSA5LjMgNTIuNiAxMC4yQzU0LjggMTAuNSA1NiAxMS45IDU2IDE0LjFWMjlDNTYgNDMuNiA0Ni40IDU0LjMgMzIgNTkuNUMxNy42IDU0LjMgOCA0My42IDggMjlWMTQuMUM4IDExLjkgOS4yIDEwLjUgMTEuNCAxMC4yQzE4LjUgOS4zIDI2LjUgNy4yIDMyIDQuNVoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PGNpcmNsZSBjeD0iMzEiIGN5PSIzMiIgcj0iMTQiIGZpbGw9IiNmZmYiIG1hc2s9InVybCgjbSkiLz48L3N2Zz4=), colored by severity. `--badge badge.json` writes the same file from the CLI.
 
 | Input | Default | Description |
 | --- | --- | --- |
 | `path` | `.` | Files or folders to scan |
 | `fail-on` | `high` | Fail the job at or above this severity (`none` to never fail) |
 | `upload-sarif` | `true` | Upload results to GitHub code scanning |
+| `pr-comment` | `true` | Comment the privacy diff on pull requests |
+| `badge` | `false` | Publish the status badge on pushes to the default branch |
 
 ## Use with AI coding agents
 
@@ -323,10 +371,12 @@ const publicData = mapDisclosures(source, "counter.compact");
 ```text
 midnight-shield [paths...] [options]
 midnight-shield explain <RULE>
+midnight-shield snapshot [paths...] -o snapshot.json
+midnight-shield diff <base.json> <head.json>
 midnight-shield --init
 
 Output:     -f, --format text|json|sarif|markdown   -o, --output <file>
-            --print disclosures   --no-code-frame   --no-color
+            --print disclosures   --badge <file>   --no-code-frame   --no-suggestions   --no-color
 Filtering:  --fail-on <severity>  --min-severity <severity>  --min-confidence <confidence>
             --disable <IDs>  --ignore <glob>  --no-sdk  --show-suppressed
 Adoption:   --baseline <file>  --write-baseline <file>  --fix  --fix-dry-run
@@ -347,8 +397,11 @@ Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` 
 | Disclosure map | | | ✅ |
 | TypeScript/DApp checks | | ✅ | ✅ |
 | Severity + confidence | | Severity | ✅ |
+| Suggested fixes for each finding | | | ✅ |
+| Privacy diff on pull requests | | | ✅ |
 | Baselines, suppressions, config | | | ✅ |
 | CLI · GitHub Action + SARIF · VS Code | ✅ · · | Demo script | ✅ · ✅ · ✅ |
+| Status badge that updates on every push | | | ✅ |
 | Web UI | | ✅ (with on-chain review receipt) | ✅ (local only) |
 | AI agent skill · plugin API | | | ✅ · ✅ |
 | Verified against real Midnight code in CI | n/a | | ✅ |
@@ -357,13 +410,13 @@ Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` 
 
 | Check | What it proves | Command |
 | --- | --- | --- |
-| **Unit and integration tests** (125 tests, 96% line coverage of `src/`) | Lexer, parser, every rule (flagged and not-flagged cases), reporters, CLI, baselines, plugins, fixes | `npm test`, `npm run coverage` |
+| **Unit and integration tests** (148 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
-| **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, no medium-or-worse findings, results match a reviewed baseline | `npm run verify` |
+| **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is a confirmed one listed in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |
 | **Package** | The npm tarball installs and the CLI runs | CI job `package` |
 
-<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/verify.png" alt="Corpus verification output" width="720">
+<img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/verify.png?v=2" alt="Corpus verification output" width="720">
 
 ## Roadmap
 
@@ -372,6 +425,7 @@ Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` 
 - [x] **v0.3** Merkle and secret rules, corpus verification, real-compiler CI
 - [x] **v0.4** Disclosure map, confidence, baselines, Markdown, plugins, autofix, TypeScript checks, playground, VS Code extension, npm package
 - [x] **v0.5** Repository and folder scanning in the playground, project logo, GitHub Packages
+- [x] **Next** Privacy diff on pull requests, status badge, suggested fixes, MS011 / MS103 / MS104
 - [ ] VS Code Marketplace release
 - [ ] Data-flow facts for plugins
 - [ ] More rules from community feedback
