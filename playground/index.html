@@ -5,8 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Midnight Shield Playground</title>
 <meta name="description" content="Paste a Midnight Compact contract and see security and privacy findings. Runs entirely in your browser.">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap">
 <style>
 :root {
+  --sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --bg: #0d1117; --panel: #161b22; --panel2: #1c2230; --border: #30363d; --text: #e6edf3; --muted: #8b949e;
   --accent: #8b7cf6; --accent2: #b4a9ff; --crit: #d670d6; --high: #f14c4c; --med: #e5c07b; --low: #56b6c2; --info: #8b949e; --ok: #3fb950;
   --line: rgba(139,124,246,.18);
@@ -16,7 +23,7 @@
     --accent: #6d5ce7; --accent2: #5546c9; --crit: #a2269e; --high: #cf222e; --med: #9a6700; --low: #0a7a8a; --info: #59636e; --ok: #1a7f37; --line: rgba(109,92,231,.14); }
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.55 var(--sans); letter-spacing: -0.005em; -webkit-font-smoothing: antialiased; }
 header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
 .brand svg { width: 26px; height: 26px; }
@@ -32,9 +39,9 @@ button:hover, select:hover { border-color: var(--accent); }
 main { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); height: calc(100% - 112px); min-height: 520px; }
 @media (max-width: 900px) { main { grid-template-columns: 1fr; height: auto; } .editor { height: 60vh; } .results { min-height: 50vh; } }
 .editor { position: relative; display: flex; border-right: 1px solid var(--border); background: var(--panel); overflow: hidden; }
-.gutter { padding: 14px 8px 14px 14px; text-align: right; color: var(--muted); user-select: none; font: 13px/20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; overflow: hidden; min-width: 48px; }
+.gutter { padding: 14px 8px 14px 14px; text-align: right; color: var(--muted); user-select: none; font: 13px/20px var(--mono); white-space: pre; overflow: hidden; min-width: 48px; }
 .gutter .hit { color: var(--high); font-weight: 700; }
-textarea { flex: 1; resize: none; border: 0; outline: 0; padding: 14px 14px 14px 6px; background: transparent; color: var(--text); font: 13px/20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; overflow: auto; tab-size: 2; }
+textarea { flex: 1; resize: none; border: 0; outline: 0; padding: 14px 14px 14px 6px; background: transparent; color: var(--text); font: 13px/20px var(--mono); white-space: pre; overflow: auto; tab-size: 2; }
 .results { display: flex; flex-direction: column; min-width: 0; }
 .tabs { display: flex; gap: 2px; padding: 0 16px; border-bottom: 1px solid var(--border); }
 .tab { padding: 10px 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); }
@@ -42,24 +49,30 @@ textarea { flex: 1; resize: none; border: 0; outline: 0; padding: 14px 14px 14px
 .summary { display: flex; gap: 8px; padding: 12px 16px; flex-wrap: wrap; align-items: center; }
 .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); }
 .panel { overflow: auto; padding: 0 16px 24px; flex: 1; }
-.finding { border: 1px solid var(--border); border-left-width: 4px; border-radius: 8px; padding: 10px 12px; margin: 10px 0; background: var(--panel); cursor: pointer; }
-.finding:hover { border-color: var(--accent); }
-.finding .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-.sev { font-weight: 700; font-size: 12px; letter-spacing: .04em; }
+.finding { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 10px 0; background: var(--panel); cursor: pointer; transition: border-color .15s, background .15s; }
+.finding:hover { border-color: var(--accent); background: var(--panel2); }
+.finding .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sev { font-weight: 600; font-size: 11px; letter-spacing: .04em; padding: 1px 7px; border-radius: 4px; background: color-mix(in srgb, currentColor 14%, transparent); }
 .rule { font-weight: 600; }
 .loc, .conf { color: var(--muted); font-size: 12px; }
-.msg { margin: 6px 0 4px; }
-.snippet { font: 12px/18px ui-monospace, Menlo, Consolas, monospace; background: var(--panel2); border-radius: 6px; padding: 6px 8px; overflow-x: auto; white-space: pre; }
+.conf::before { content: "·"; margin-right: 8px; }
+.msg { margin: 8px 0 8px; color: var(--text); }
+.snippet { font: 12px/18px var(--mono); background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; overflow-x: auto; white-space: pre; }
+.finding:hover .snippet { background: var(--panel); }
+.finding a { display: inline-block; margin-top: 8px; text-decoration: none; }
+.finding a:hover { text-decoration: underline; }
 .finding a { color: var(--accent2); font-size: 12px; }
 .empty { text-align: center; color: var(--muted); padding: 48px 16px; }
 .empty .big { font-size: 40px; color: var(--ok); }
 table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; }
-td code { font: 12px ui-monospace, Menlo, Consolas, monospace; }
+td code { font: 12px var(--mono); }
 .raw { color: var(--high); font-weight: 600; } .hash { color: var(--text); } .commit { color: var(--ok); } .weak { color: var(--med); font-weight: 600; }
 .note { color: var(--muted); font-size: 12px; margin: 12px 0 0; }
 footer { padding: 8px 20px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); }
+/* code must show exactly what is typed: no ligatures such as >= rendered as a single glyph */
+textarea, .gutter, .snippet, code { font-variant-ligatures: none !important; font-feature-settings: "liga" 0, "calt" 0 !important; }
 </style>
 </head>
 <body>

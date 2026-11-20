@@ -59,7 +59,7 @@ function render(): void {
     }
     panel.innerHTML = findings
       .map(
-        (f, i) => `<div class="finding" data-i="${i}" style="border-left-color:${SEV_COLOR[f.severity]}">
+        (f, i) => `<div class="finding" data-i="${i}">
           <div class="head"><span class="sev" style="color:${SEV_COLOR[f.severity]}">${f.severity.toUpperCase()}</span>
           <span class="rule">${f.ruleId} ${esc(f.ruleName)}</span><span class="loc">line ${f.line}:${f.col}</span>
           ${f.confidence !== "high" ? `<span class="conf">${f.confidence} confidence</span>` : ""}</div>

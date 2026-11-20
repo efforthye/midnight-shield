@@ -71,8 +71,6 @@ npm install -g midnight-shield
 midnight-shield contracts/
 ```
 
-> If the npm package is not available yet, use `npx github:efforthye/midnight-shield contracts/`.
-
 Not ready to install anything? Paste a contract into the **[web playground](#web-playground)**.
 
 The repository has examples: [`examples/vulnerable.compact`](examples/vulnerable.compact) triggers every Compact rule, [`examples/dapp/vulnerable.ts`](examples/dapp/vulnerable.ts) every TypeScript rule, and the `safe` versions show the fixes (0 findings).
