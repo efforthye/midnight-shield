@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-20
+
 ### Added
 
 - **MS120 secret-from-public-data**: a secret computed only from public values (a wallet address, a public key), so anyone can recompute it. Found in a public project, where every role's secret key was derived from the user's public coin key.
