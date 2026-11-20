@@ -5,6 +5,8 @@ import { lex } from "./lexer.js";
 import { parse } from "./parser.js";
 import { runCustomRule, type CustomRule } from "./plugins.js";
 import { isSdkFile, isTestFile, lintSdkSource } from "./sdk.js";
+import { checkAuthWrites } from "./auth-writes.js";
+import { suggestFix, type Suggestion } from "./suggest.js";
 import { CONFIDENCE_ORDER, RULES_BY_ID, SEVERITY_ORDER, ruleDocUrl, type Confidence, type RuleMeta, type Severity } from "./rules.js";
 
 export interface Finding {
@@ -26,6 +28,8 @@ export interface Finding {
   suppressed?: "inline" | "baseline";
   /** a safe automatic fix, when one exists */
   fix?: TextEdit;
+  /** a suggested fix to review and apply by hand (see suggest.ts) */
+  suggestion?: Suggestion;
 }
 
 export interface LintOptions {
@@ -121,6 +125,7 @@ function analyze(source: string, file: string, options: LintOptions): Analysis {
   const program = parse(source);
   const analyzer = new Analyzer(program, options.resolver, options.absolutePath);
   const raw = analyzer.run();
+  raw.push(...checkAuthWrites(program));
   for (const rule of options.plugins ?? []) raw.push(...runCustomRule(rule, file, source, program));
   return { program, analyzer, raw };
 }
@@ -163,6 +168,8 @@ function toFindings(raw: RawFinding[], source: string, file: string, options: Li
         fingerprint: fingerprint(f.ruleId, file, snippet, n),
       };
       if (f.ruleId === "MS006") finding.fix = pragmaFix(source);
+      const suggestion = suggestFix(f.ruleId, f.message, snippet);
+      if (suggestion) finding.suggestion = suggestion;
       if (isSuppressed(suppressions, f.ruleId, f.loc.line)) finding.suppressed = "inline";
       else if (options.baseline?.has(finding.fingerprint)) finding.suppressed = "baseline";
       return finding;

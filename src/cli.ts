@@ -9,6 +9,8 @@ import { lintFiles, listTargetFiles, mapDisclosuresInFiles, readBaseline } from 
 import { loadPlugins } from "./plugin-loader.js";
 import { PluginError, type CustomRule } from "./plugins.js";
 import { VERSION, formatDisclosures, formatDisclosuresMarkdown, formatJson, formatMarkdown, formatSarif, formatText } from "./reporters.js";
+import { badgeJson } from "./badge.js";
+import { createSnapshot, diffIsEmpty, diffSnapshots, formatDiffMarkdown, formatDiffText, readSnapshot } from "./privacy-diff.js";
 import { CONFIDENCE_ORDER, RULES, RULES_BY_ID, SEVERITY_ORDER, type Confidence, type Severity } from "./rules.js";
 
 const HELP = `midnight-shield ${VERSION}
@@ -17,6 +19,11 @@ Static analyzer for Midnight Compact contracts and their TypeScript code.
 Usage:
   midnight-shield [paths...] [options]     scan files and folders (default: .)
   midnight-shield explain <RULE>           show a rule's documentation
+  midnight-shield snapshot [paths...]      save findings and the disclosure map as JSON
+                                           (-o file), to compare later with diff
+  midnight-shield diff <base> <head>       privacy diff of two snapshots: what became
+                                           public, new and fixed findings
+                                           (--format text|markdown|json, --fail-on)
   midnight-shield --init                   create ${CONFIG_FILE}
 
 Output:
@@ -25,7 +32,9 @@ Output:
       --print disclosures                  Print the disclosure map: every point where
                                            data becomes public, and what flows there
       --no-code-frame                      Do not print source lines
+      --no-suggestions                     Do not print suggested fixes
       --no-color                           Disable colored output
+      --badge <file>                       Also write a status badge (shields.io endpoint JSON)
 
 Filtering:
       --fail-on <severity>                 Exit 1 at or above this severity (default: high;
@@ -92,6 +101,30 @@ function explain(id: string | undefined, plugins: CustomRule[]): void {
   }
 }
 
+function diffCommand(paths: string[], format: string, output: string | undefined, failOn: Severity | "none" | undefined): void {
+  if (paths.length !== 2) fail("diff needs two snapshots: midnight-shield diff base.json head.json");
+  const [basePath, headPath] = paths;
+  let diff;
+  try {
+    const base = readSnapshot(readFileSync(basePath, "utf8"), basePath);
+    const head = readSnapshot(readFileSync(headPath, "utf8"), headPath);
+    diff = diffSnapshots(base, head);
+  } catch (e) {
+    fail((e as Error).message);
+  }
+  const report =
+    format === "json"
+      ? JSON.stringify({ tool: "midnight-shield", version: VERSION, empty: diffIsEmpty(diff), ...diff }, null, 2)
+      : format === "markdown"
+        ? formatDiffMarkdown(diff, { marker: "<!-- midnight-shield-privacy-diff -->", scanUrl: process.env.MIDNIGHT_SHIELD_SCAN_URL })
+        : formatDiffText(diff);
+  if (output) writeFileSync(output, report + "\n");
+  else process.stdout.write(report + "\n");
+  // only new findings can fail a diff: existing ones are the base's
+  const level = failOn ?? "none";
+  if (level !== "none" && diff.newFindings.some((f) => SEVERITY_ORDER.indexOf(f.severity) <= SEVERITY_ORDER.indexOf(level))) process.exitCode = 1;
+}
+
 async function main(argv: string[]): Promise<void> {
   const paths: string[] = [];
   let format = "text";
@@ -104,6 +137,7 @@ async function main(argv: string[]): Promise<void> {
   const ignore: string[] = [];
   const pluginPaths: string[] = [];
   let codeFrame = true;
+  let suggestions = true;
   let sdk: boolean | undefined;
   let showSuppressed = false;
   let baselinePath: string | undefined;
@@ -112,6 +146,7 @@ async function main(argv: string[]): Promise<void> {
   let fixDryRun = false;
   let print: string | undefined;
   let command: string | undefined;
+  let badge: string | undefined;
   let color = (Boolean(process.stdout.isTTY) || Boolean(process.env.FORCE_COLOR)) && !process.env.NO_COLOR;
 
   for (let i = 0; i < argv.length; i++) {
@@ -194,6 +229,12 @@ async function main(argv: string[]): Promise<void> {
         print = value();
         if (print !== "disclosures") fail('--print supports "disclosures"');
         break;
+      case "--badge":
+        badge = value();
+        break;
+      case "--no-suggestions":
+        suggestions = false;
+        break;
       case "--no-code-frame":
         codeFrame = false;
         break;
@@ -205,7 +246,7 @@ async function main(argv: string[]): Promise<void> {
         break;
       default:
         if (a.startsWith("-")) fail(`unknown option ${a}`);
-        if (!command && paths.length === 0 && a === "explain") command = "explain";
+        if (!command && paths.length === 0 && (a === "explain" || a === "snapshot" || a === "diff")) command = a;
         else paths.push(a);
     }
   }
@@ -231,6 +272,7 @@ async function main(argv: string[]): Promise<void> {
   }
 
   if (command === "explain") return explain(paths[0], plugins);
+  if (command === "diff") return diffCommand(paths, format, output, failOn);
 
   const baselineFile = baselinePath ?? (config.baseline ? resolve(configDir, config.baseline) : undefined);
   let baseline: Set<string> | undefined;
@@ -273,6 +315,16 @@ async function main(argv: string[]): Promise<void> {
     fail((e as Error).message);
   }
 
+  if (command === "snapshot") {
+    const snap = createSnapshot(findings, mapDisclosuresInFiles(paths, options), VERSION);
+    const json = JSON.stringify(snap, null, 2) + "\n";
+    if (output) {
+      writeFileSync(output, json);
+      process.stdout.write(`Saved ${snap.findings.length} finding(s) and ${snap.disclosures.length} disclosure(s) to ${output}\n`);
+    } else process.stdout.write(json);
+    return;
+  }
+
   if (fix || fixDryRun) {
     const byFile = new Map<string, Finding[]>();
     for (const f of findings) if (f.fix && !f.suppressed) byFile.set(f.file, [...(byFile.get(f.file) ?? []), f]);
@@ -300,7 +352,7 @@ async function main(argv: string[]): Promise<void> {
 
   const visible = showSuppressed ? findings : findings.filter((f) => !f.suppressed);
   const active = findings.filter((f) => !f.suppressed);
-  const text = (useColor: boolean) => formatText(visible, fileCount, { color: useColor, codeFrame });
+  const text = (useColor: boolean) => formatText(visible, fileCount, { color: useColor, codeFrame, suggestions });
   const report =
     format === "json"
       ? formatJson(visible)
@@ -309,6 +361,8 @@ async function main(argv: string[]): Promise<void> {
         : format === "markdown"
           ? formatMarkdown(visible, fileCount, { date: new Date().toISOString().slice(0, 10) })
           : text(color && !output);
+
+  if (badge) writeFileSync(badge, JSON.stringify(badgeJson(findings)) + "\n");
 
   if (output) {
     writeFileSync(output, report + "\n");

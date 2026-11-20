@@ -96,7 +96,30 @@ describe("CLI", () => {
     const clean = run(["c.compact", "--baseline", "b.json"], dir);
     assert.equal(clean.code, 0);
     assert.match(clean.stdout, /No findings/);
-    assert.match(run(["c.compact", "--baseline", "b.json", "--show-suppressed"], dir).stdout, /Suppressed \(9\)/);
+    assert.match(run(["c.compact", "--baseline", "b.json", "--show-suppressed"], dir).stdout, /Suppressed \(10\)/);
+  });
+
+  it("saves snapshots and diffs them, failing only on new findings", () => {
+    const safe = readFileSync("examples/safe.compact", "utf8");
+    const broken = safe.replace(/(export circuit transferOwnership[^{]*\{\n)\s*assert\([^\n]*\n/, "$1");
+    const dir = tempDir({ "c.compact": safe });
+    assert.equal(run(["snapshot", "c.compact", "-o", "base.json"], dir).code, 0);
+    writeFileSync(join(dir, "c.compact"), broken);
+    assert.equal(run(["snapshot", "c.compact", "-o", "head.json"], dir).code, 0);
+    const text = run(["diff", "base.json", "head.json"], dir);
+    assert.equal(text.code, 0);
+    assert.match(text.stdout, /New findings \(1\)\n  \+ HIGH MS011/);
+    assert.equal(run(["diff", "base.json", "head.json", "--fail-on", "high"], dir).code, 1);
+    assert.equal(run(["diff", "head.json", "base.json", "--fail-on", "high"], dir).code, 0);
+    assert.equal(run(["diff", "base.json"], dir).code, 2);
+  });
+
+  it("writes a status badge next to the report", () => {
+    const dir = tempDir({ "c.compact": readFileSync("examples/vulnerable.compact", "utf8") });
+    run(["c.compact", "--badge", "badge.json", "--fail-on", "none"], dir);
+    const badge = JSON.parse(readFileSync(join(dir, "badge.json"), "utf8"));
+    assert.equal(badge.label, "midnight shield");
+    assert.equal(badge.color, "critical");
   });
 
   it("writes a Markdown report", () => {

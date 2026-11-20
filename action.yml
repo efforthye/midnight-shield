@@ -1,5 +1,5 @@
 name: Midnight Shield
-description: Static analysis for Midnight Compact contracts. Finds security and privacy issues before deploy.
+description: Static analysis for Midnight Compact contracts. Finds security and privacy issues before deploy, and comments a privacy diff on pull requests.
 author: efforthye
 branding:
   icon: shield
@@ -15,6 +15,15 @@ inputs:
   upload-sarif:
     description: Upload results to GitHub code scanning (requires security-events write permission)
     default: "true"
+  pr-comment:
+    description: On pull requests, comment what the change makes public and which findings it adds or fixes (requires pull-requests write permission)
+    default: "true"
+  badge:
+    description: On pushes to the default branch, publish a status badge to the midnight-shield-badge branch (requires contents write permission)
+    default: "false"
+  github-token:
+    description: Token used to comment and to publish the badge
+    default: ${{ github.token }}
 
 runs:
   using: composite
@@ -27,10 +36,10 @@ runs:
       shell: bash
       working-directory: ${{ github.action_path }}
       run: |
-        npm ci --no-audit --no-fund
+        npm ci --no-audit --no-fund --ignore-scripts
         npm run build
 
-    - name: Scan Compact contracts
+    - name: Scan
       id: scan
       shell: bash
       env:
@@ -39,7 +48,8 @@ runs:
       run: |
         set +e
         # shellcheck disable=SC2086
-        node "$GITHUB_ACTION_PATH/dist/src/cli.js" $SCAN_PATH --format sarif --output midnight-shield.sarif --fail-on "$FAIL_ON"
+        node "$GITHUB_ACTION_PATH/dist/src/cli.js" $SCAN_PATH --format sarif --output midnight-shield.sarif \
+          --badge "$RUNNER_TEMP/midnight-shield-badge.json" --fail-on "$FAIL_ON"
         echo "exit-code=$?" >> "$GITHUB_OUTPUT"
 
     - name: Upload SARIF
@@ -48,6 +58,74 @@ runs:
       with:
         sarif_file: midnight-shield.sarif
         category: midnight-shield
+
+    - name: Privacy diff
+      if: github.event_name == 'pull_request' && inputs.pr-comment == 'true'
+      # pull requests from forks get a read-only token: never fail the job over the comment
+      continue-on-error: true
+      shell: bash
+      env:
+        SCAN_PATH: ${{ inputs.path }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        ms() { node "$GITHUB_ACTION_PATH/dist/src/cli.js" "$@"; }
+        # shellcheck disable=SC2086
+        ms snapshot $SCAN_PATH -o "$RUNNER_TEMP/ms-head.json"
+
+        git fetch --no-tags --depth=1 origin "$BASE_SHA"
+        git worktree add --detach "$RUNNER_TEMP/ms-base" "$BASE_SHA" > /dev/null
+        # shellcheck disable=SC2086
+        if ! (cd "$RUNNER_TEMP/ms-base" && ms snapshot $SCAN_PATH -o "$RUNNER_TEMP/ms-base.json"); then
+          # the scanned path does not exist on the base branch yet: everything is new
+          echo '{"tool":"midnight-shield","snapshot":1,"version":"","findings":[],"disclosures":[]}' > "$RUNNER_TEMP/ms-base.json"
+        fi
+
+        MIDNIGHT_SHIELD_SCAN_URL="https://efforthye.github.io/midnight-shield/#repo=$HEAD_REPO/tree/$HEAD_SHA" \
+          ms diff "$RUNNER_TEMP/ms-base.json" "$RUNNER_TEMP/ms-head.json" --format markdown -o "$RUNNER_TEMP/ms-diff.md"
+        cat "$RUNNER_TEMP/ms-diff.md" >> "$GITHUB_STEP_SUMMARY"
+
+        # update our earlier comment on this pull request, or add one
+        id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+          --jq '.[] | select(.body | startswith("<!-- midnight-shield-privacy-diff -->")) | .id' | head -n 1)
+        if [ -n "$id" ]; then
+          gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@"$RUNNER_TEMP/ms-diff.md" > /dev/null
+        else
+          gh api -X POST "repos/$REPO/issues/$PR/comments" -F body=@"$RUNNER_TEMP/ms-diff.md" > /dev/null
+        fi
+
+    - name: Publish status badge
+      if: inputs.badge == 'true' && github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      continue-on-error: true
+      shell: bash
+      env:
+        REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        # a one-commit branch that only holds badge.json, replaced on every push
+        dir="$RUNNER_TEMP/ms-badge"
+        rm -rf "$dir" && mkdir -p "$dir" && cd "$dir"
+        git init -q -b midnight-shield-badge
+        cp "$RUNNER_TEMP/midnight-shield-badge.json" badge.json
+        git add badge.json
+        git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+          commit -qm "Update Midnight Shield badge"
+        git push -qf "https://x-access-token:$GH_TOKEN@github.com/$REPO.git" HEAD:midnight-shield-badge
+        {
+          echo "### Midnight Shield badge"
+          echo ""
+          echo "Add to your README:"
+          echo ""
+          echo '```markdown'
+          echo "[![Midnight Shield](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/$REPO/midnight-shield-badge/badge.json)](https://efforthye.github.io/midnight-shield/#repo=$REPO)"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Check result
       shell: bash

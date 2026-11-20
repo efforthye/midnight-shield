@@ -1,4 +1,5 @@
 import type { DisclosureEntry, Finding } from "./linter.js";
+import { suggestionDiff } from "./suggest.js";
 import { RULES, SEVERITY_ORDER, ruleDocUrl, type RuleMeta, type Severity } from "./rules.js";
 
 export const VERSION = "0.5.0";
@@ -20,6 +21,8 @@ export interface TextOptions {
   codeFrame?: boolean;
   /** show the rule documentation link (default: true) */
   links?: boolean;
+  /** show a suggested fix under each finding (default: true) */
+  suggestions?: boolean;
 }
 
 function caretLength(snippet: string, col: number): number {
@@ -45,6 +48,7 @@ export function formatText(all: Finding[], fileCount: number, options: TextOptio
   const color = opts.color ?? true;
   const codeFrame = opts.codeFrame ?? true;
   const links = opts.links ?? true;
+  const suggestions = opts.suggestions ?? true;
   const c = (code: string, s: string) => (color ? code + s + RESET : s);
   const findings = all.filter((f) => !f.suppressed);
   const suppressed = all.filter((f) => f.suppressed);
@@ -69,6 +73,14 @@ export function formatText(all: Finding[], fileCount: number, options: TextOptio
       const text = f.snippet.replace(/\t/g, " ");
       lines.push(`    ${c(DIM, num + " │")} ${text}`);
       lines.push(`    ${c(DIM, gutter + " │")} ${" ".repeat(Math.max(0, f.col - 1))}${c(COLORS[f.severity], "^".repeat(caretLength(text, f.col)))}`);
+    }
+    if (suggestions && f.suggestion) {
+      lines.push(`  ${c(BOLD, "Suggested fix")}`);
+      for (const d of suggestionDiff(f.suggestion)) {
+        const text = `${d.kind} ${d.text}`;
+        lines.push(`    ${d.kind === "-" ? c("\x1b[31m", text) : d.kind === "+" ? c("\x1b[32m", text) : c(DIM, text)}`);
+      }
+      if (f.suggestion.note) lines.push(`  ${c(DIM, f.suggestion.note)}`);
     }
     if (links) lines.push(`  ${c(DIM, "→ " + f.docUrl)}`);
   }
@@ -227,6 +239,18 @@ export function formatMarkdown(all: Finding[], fileCount: number, options: { tit
         out.push(f.snippet.replace(/^\s+/, ""));
         out.push("```");
         out.push("");
+      }
+      if (f.suggestion) {
+        out.push("Suggested fix:");
+        out.push("");
+        out.push("```diff");
+        for (const d of suggestionDiff(f.suggestion)) out.push(`${d.kind} ${d.text}`);
+        out.push("```");
+        out.push("");
+        if (f.suggestion.note) {
+          out.push(f.suggestion.note);
+          out.push("");
+        }
       }
       out.push(`How to fix: [${f.ruleId}](${f.docUrl})`);
       out.push("");

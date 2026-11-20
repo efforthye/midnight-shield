@@ -4,3 +4,4 @@ export { lintSource, mapDisclosures, type Finding, type DisclosureEntry } from "
 export { RULES, RULES_BY_ID } from "./rules.js";
 export { formatMarkdown, VERSION } from "./reporters.js";
 export { parseRepoUrl, isScannableFile, usesMidnightSdk, lintFileMap, memoryImportResolver, type RepoRef } from "./repo.js";
+export { suggestionDiff, type Suggestion, type DiffLine } from "./suggest.js";
