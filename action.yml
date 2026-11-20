@@ -1,0 +1,56 @@
+name: Midnight Shield
+description: Static analysis for Midnight Compact contracts. Finds security and privacy issues before deploy.
+author: efforthye
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  path:
+    description: Files or directories to scan (space-separated)
+    default: "."
+  fail-on:
+    description: Fail the step if a finding is at or above this severity (critical, high, medium, low, info, none)
+    default: "high"
+  upload-sarif:
+    description: Upload results to GitHub code scanning (requires security-events write permission)
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Build Midnight Shield
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        npm ci --no-audit --no-fund
+        npm run build
+
+    - name: Scan Compact contracts
+      id: scan
+      shell: bash
+      env:
+        SCAN_PATH: ${{ inputs.path }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        set +e
+        # shellcheck disable=SC2086
+        node "$GITHUB_ACTION_PATH/dist/src/cli.js" $SCAN_PATH --format sarif --output midnight-shield.sarif --fail-on "$FAIL_ON"
+        echo "exit-code=$?" >> "$GITHUB_OUTPUT"
+
+    - name: Upload SARIF
+      if: inputs.upload-sarif == 'true'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: midnight-shield.sarif
+        category: midnight-shield
+
+    - name: Check result
+      shell: bash
+      env:
+        EXIT_CODE: ${{ steps.scan.outputs.exit-code }}
+      run: exit "$EXIT_CODE"
