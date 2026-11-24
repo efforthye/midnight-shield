@@ -8,12 +8,9 @@
 Catch security and privacy bugs before you deploy: in your terminal, your editor, your browser, CI, and AI coding agents.
 
 [![CI](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
-![Rules](https://img.shields.io/badge/rules-55-purple)
-![Tests](https://img.shields.io/badge/tests-367%20passing-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
+[![npm downloads](https://img.shields.io/npm/dm/midnight-shield)](https://www.npmjs.com/package/midnight-shield)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [Quick start](#quick-start) · [Web playground](#web-playground) · [Rules](#rules) · [Disclosure map](#disclosure-map) · [Editor](#vs-code) · [CI](#github-action) · [AI agents](#use-with-ai-coding-agents) · [Verification](#testing-and-verification) · [Pitch deck](#presentation)
 
