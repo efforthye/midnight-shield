@@ -1,5 +1,5 @@
 // expect: MS007
-// note: secret with a neutral name (known limit: MS007 relies on names; MS002 still fires)
+// note: secret with a neutral name, caught by its type and use
 pragma language_version >= 0.28.0;
 import CompactStandardLibrary;
 

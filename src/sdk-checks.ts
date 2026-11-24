@@ -208,7 +208,7 @@ function secretSinks(tokens: Token[]): RawFinding[] {
 }
 
 const isRandomnessName = (name: string) =>
-  isSecretName(name) || /(nonce|salt|rand(om)?(ness)?|blind|entropy)(?![a-z])/i.test(name.replace(/([a-z0-9])([A-Z])/g, "$1_$2"));
+  isSecretName(name) || /(^|_)(nonce|salt|randomness|rand|blind(ing)?(_factor)?|entropy)(?![a-z])/i.test(name.replace(/([a-z0-9])([A-Z])/g, "$1_$2"));
 
 /** MS113: inside `witnesses = { … }`, a randomness or secret witness that returns fresh zero bytes or a clock value. */
 function weakWitnessRandomness(tokens: Token[]): RawFinding[] {

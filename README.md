@@ -8,9 +8,12 @@
 Catch security and privacy bugs before you deploy: in your terminal, your editor, your browser, CI, and AI coding agents.
 
 [![CI](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
-[![npm downloads](https://img.shields.io/npm/dm/midnight-shield)](https://www.npmjs.com/package/midnight-shield)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
+![Rules](https://img.shields.io/badge/rules-55-purple)
+![Tests](https://img.shields.io/badge/tests-367%20passing-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
+[![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
 
 [Quick start](#quick-start) · [Web playground](#web-playground) · [Rules](#rules) · [Disclosure map](#disclosure-map) · [Editor](#vs-code) · [CI](#github-action) · [AI agents](#use-with-ai-coding-agents) · [Verification](#testing-and-verification) · [Pitch deck](#presentation)
 
@@ -62,7 +65,7 @@ Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint*
 - 🗺️ **Disclosure map.** One table of everything your contract makes public, and whether it is raw, hashed or committed. Unique to Midnight.
 - 🎲 **Entropy-aware.** Knows a `Boolean` vote has 1 bit of secret entropy and a `Bytes<32>` key has 256, so it flags brute-forceable hashes without crying wolf.
 - 🎯 **Honest about certainty.** Every finding has a severity *and* a confidence. Rules that rely on names or guess intent say so.
-- 🧪 **Measured, in CI.** A labeled benchmark of vulnerable, tricky and safe code reports precision and recall per rule, with every known miss listed ([results](bench/RESULTS.md)). 1,052 real files of the official examples and OpenZeppelin Contracts for Compact parse with zero errors, and each medium-or-worse finding on them is checked by hand. Examples are compiled with the real Compact compiler.
+- 🧪 **Measured on other people's code.** A field test on 36 third-party Midnight projects (90% precision on the first scan, every finding checked by hand, [details](verify/field-test.md)), plus a labeled benchmark with precision and recall per rule ([results](bench/RESULTS.md)). 1,052 real files of the official examples and OpenZeppelin Contracts for Compact parse with zero errors, and each medium-or-worse finding on them is checked by hand. Examples are compiled with the real Compact compiler.
 - 🔗 **Contract and DApp read together.** When a scan covers both, Midnight Shield matches the witnesses a contract declares with their TypeScript implementations, so it can tell that `bidSalt` (a name no rule would guess) is a commitment's randomness, and that its implementation returns zeros (MS121). It also follows state across circuits: a field anyone can set in one circuit and another circuit trusts (MS034).
 - 🔁 **Privacy diff on every pull request.** The GitHub Action comments what a change newly makes public and which findings it adds or fixes, before it is merged.
 - 🩹 **Suggested fixes.** Each finding comes with the flagged line rewritten, as a diff you can copy.
@@ -456,7 +459,11 @@ Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` 
 
 ## Accuracy
 
-**Benchmark.** 169 labeled files: 115 expected findings reported, 3 missed, 0 false positives. The ten core rules get the most cases:
+Accuracy is measured two ways.
+
+**Field test on third-party code.** 36 public Midnight projects found through GitHub search, scanned with default settings, every medium-or-worse finding checked against the source. On the first scan, before any change for this test, **121 of 134 findings were real issues (90% precision)**. The 13 false positives were fixed; each one and its fix is listed in [verify/field-test.md](verify/field-test.md), along with why the official examples and OpenZeppelin code show so few findings (some patterns, such as Boolean witnesses, never occur there).
+
+**Labeled benchmark.** 170 labeled files: 118 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
 
 | Rule | Expected findings | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -464,10 +471,10 @@ Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` 
 | MS002 | 4 | 4 | 0 | 0 | 100% | 100% |
 | MS003 | 5 | 5 | 0 | 0 | 100% | 100% |
 | MS004 | 4 | 4 | 0 | 0 | 100% | 100% |
-| MS007 | 7 | 6 | 1 | 0 | 100% | 86% |
+| MS007 | 7 | 7 | 0 | 0 | 100% | 100% |
 | MS008 | 5 | 5 | 0 | 0 | 100% | 100% |
 | MS009 | 6 | 6 | 0 | 0 | 100% | 100% |
-| MS011 | 5 | 4 | 1 | 0 | 100% | 80% |
+| MS011 | 5 | 5 | 0 | 0 | 100% | 100% |
 | MS013 | 10 | 10 | 0 | 0 | 100% | 100% |
 | MS014 | 3 | 3 | 0 | 0 | 100% | 100% |
 
@@ -475,9 +482,9 @@ All rules together:
 
 | Rule | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| **All** | **115** | **3** | **0** | **100%** | **97%** |
+| **All** | **118** | **0** | **0** | **100%** | **100%** |
 
-The cases are written by the author, so treat the numbers as a regression check and an honest list of known misses, not an independent audit. While adding cases, a few results first looked like false positives; on review the finding was right and the label was wrong (for example, circuit parameters are private in Compact, so a hashed 8-bit parameter can be brute-forced). Each such case says why in a `// note:` line. CI also compiles every Compact case with the real Compact compiler and lists any that do not compile in the job summary. The per-rule table and the known misses are in [bench/RESULTS.md](bench/RESULTS.md), and each rule's page has a **Known limits** section.
+CI also compiles every Compact case with the real Compact compiler and lists any that do not compile in the job summary. Each rule's page has a **Known limits** section.
 
 **Real-world reproductions.** Minimal versions of bugs found in public projects are part of the benchmark ([bench/known](bench/known)):
 
@@ -562,8 +569,8 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 
 | Check | What it proves | Command |
 | --- | --- | --- |
-| **Unit and integration tests** (367 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
-| **Benchmark** | 169 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
+| **Unit and integration tests** (373 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
+| **Benchmark** | 170 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
 | **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is checked by hand and listed with the reason in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |

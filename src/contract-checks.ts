@@ -173,6 +173,35 @@ function nullifierNotChecked(program: Program, ctx: Ctx): RawFinding[] {
       });
     }
   }
+  // by role, whatever the name: a Set that receives values derived from the caller's secret,
+  // which no circuit ever checks. Without a check it cannot stop anything from happening twice.
+  const allSetNames = new Set<string>();
+  walk(program.decls, (d) => {
+    if (d.kind === "ledger" && d.type.name === "Set" && !NULLIFIER_SET.test(d.name)) allSetNames.add(d.name);
+  });
+  const checkedAnywhere = new Set<string>();
+  for (const e of allExprs(program)) {
+    if (e.kind === "call" && e.callee.kind === "member" && e.callee.property === "member" && e.callee.object.kind === "ident") checkedAnywhere.add(e.callee.object.name);
+  }
+  const unchecked = new Set([...allSetNames].filter((n) => !checkedAnywhere.has(n)));
+  if (unchecked.size) {
+    for (const c of ctx.circuits.values()) {
+      if (!c.exported || !c.body) continue;
+      for (const ins of reachableCalls(c, ctx, (e) => onLedger(e, unchecked, "insert"))) {
+        const set = ((ins.callee as Extract<Expr, { kind: "member" }>).object as { name: string }).name;
+        const v = ins.args[0];
+        const secretDerived = v && [...exprs(v)].some((x) => x.kind === "call" && x.callee.kind === "ident" && /Hash$/.test(x.callee.name)) && [...exprs(v)].some((x) => x.kind === "call" && x.callee.kind === "ident" && ctx.witnesses.has(x.callee.name));
+        if (!secretDerived) continue;
+        out.push({
+          ruleId: "MS018",
+          severity: "medium",
+          confidence: "low",
+          loc: ins.loc,
+          message: `'${c.name}' adds a hash of the caller's secret to '${set}', and no circuit ever checks membership in '${set}'. If it is meant to stop the same caller from acting twice (a nullifier), it does not: add assert(!${set}.member(…), "already used") before the insert.`,
+        });
+      }
+    }
+  }
   const sets = nullifierSets(program);
   if (!sets.size) return out;
   const reported = new Set<string>();
@@ -230,7 +259,7 @@ function checksSomething(c: Circuit, ctx: Ctx, seen = new Set<string>()): boolea
 
 const KNOWN_SAFE = new Set(["disclose", "pad", "persistentHash", "persistentCommit", "transientHash", "transientCommit", "default", "left", "right", "some", "none", "receiveShielded", "receiveUnshielded", "receive"]);
 
-const SEND = new Set(["send", "sendImmediate", "sendShielded", "sendUnshielded"]);
+const SEND = new Set(["send", "sendImmediate", "sendShielded", "sendImmediateShielded", "sendUnshielded"]);
 const MINT = new Set(["mintToken", "mintShieldedToken", "mintUnshieldedToken"]);
 
 function unguardedTokenOps(ctx: Ctx): RawFinding[] {

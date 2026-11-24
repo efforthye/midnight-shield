@@ -1,0 +1,7 @@
+// expect: none
+// note: nothing reads boss, so setting it grants nothing; relabeled from MS011 after review
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger boss: Bytes<32>;
+export circuit setBoss(k: Bytes<32>): [] { boss = disclose(k); }

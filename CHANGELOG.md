@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- **MS121 weak-witness-implementation**: the contract and the DApp are read together. A witness the contract uses as commitment randomness or as a secret key, implemented in the DApp with zeros, a clock, `Math.random()` or a constant, is reported whatever its name.
+- **MS034 untrusted-state-dependency**: a ledger field that any caller can set in one circuit, trusted by another circuit in a check or a token transfer (the oracle-price pattern).
+- **Suppression reasons.** `// shield-disable-next-line MS005 -- why` keeps the reason with the finding: `--show-suppressed` prints it, JSON has `suppressionReason`, SARIF has the suppression's `justification`. `--require-suppression-reason` (or `"requireSuppressionReason": true`) ignores comments without one.
+- **Presets.** `--preset recommended` (medium confidence and up, fail on high) for adopting in CI, `--preset strict` (everything, fail on medium, suppressions need a reason) for audits; also `"preset"` in the config file.
+- **Field test** on 36 third-party Midnight projects: 90% precision on the first scan (121 of 134 medium-or-worse findings were real issues), every finding checked by hand. Results, the false positives and their fixes in `verify/field-test.md`; `scripts/corpus-sites.mjs` shows how often each core rule meets its pattern in the official code.
+- Rules recognize secrets, nullifier sets and owner fields by role, not only by name: MS007 by type and use (a neutral `Bytes<32>` witness published raw), MS018 by a set that receives hashes of the caller's secret and is never checked, MS011 by comparisons in an `if`.
+- Informational findings (unused code, a missing pragma) are hidden by default in the CLI and the playground, with a count of what was hidden; `--min-severity info` shows them.
+
+### Fixed
+
+- False positives found in the field test: MS007 on numbers named like seeds (`seedTreasury`), MS105 on `Math.random()` fallbacks and on adjectives (`randomHex`), MS103 on placeholder keys, MS113 on deploy and end-to-end script stubs, MS028 when funds leave with `sendImmediateShielded`, MS004 on two calls of the same randomness witness, MS008 on writes keyed by the caller's secret.
+- MS001 reports a helper such as `assertOnlyOwner()` once, with the number of call sites, instead of once per call.
+- MS102 reports a console line that asks the user to save a new seed as low severity; `logger` calls stay high.
+- The GitHub Pages workflow builds and deploys in separate jobs, with `upload-pages-artifact` v4.
+- The README listed MS120 in the "Why" table instead of the DApp rules table.
+
 ## [0.6.1] - 2026-11-20
 
 ### Added

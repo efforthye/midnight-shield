@@ -117,12 +117,23 @@ function lintSdkTokens(tokens: Token[]): RawFinding[] {
         if (!secrets.includes(tok.value)) secrets.push(tok.value);
       }
       if (secrets.length) {
+        // `console.log("SAVE THIS SEED: …")` in a CLI shows a new seed to its owner on purpose. Still worth a
+        // look (terminals get recorded, CI captures stdout), but it is not a logging mistake like logger.info(seed).
+        let close = i + 3;
+        for (let d = 0; close < tokens.length; close++) {
+          if (tokens[close].value === "(") d++;
+          else if (tokens[close].value === ")" && --d === 0) break;
+        }
+        const text = tokens.slice(i + 3, close).filter((x) => x.kind === "string").map((x) => x.value).join(" ");
+        const shownOnPurpose = t.value === "console" && /save|back ?up|write (it |this )?down|keep (it|this)|store (it|this)|don'?t lose|you'?ll need/i.test(text);
         out.push({
           ruleId: "MS102",
-          severity: "high",
+          severity: shownOnPurpose ? "low" : "high",
           confidence: "medium",
           loc: loc(t),
-          message: `'${secrets.join("', '")}' looks like a secret and is passed to ${t.value}.${tokens[i + 2].value}(). Logs are stored and shared (CI output, crash reports, browser consoles). Remove it or log a non-reversible identifier instead.`,
+          message: shownOnPurpose
+            ? `'${secrets.join("', '")}' is printed for the user to save. That is fine in an interactive CLI, but stdout is often recorded (CI logs, terminal history, screen sharing). Print it only when a person is at the terminal, and never in scripts that run in CI.`
+            : `'${secrets.join("', '")}' looks like a secret and is passed to ${t.value}.${tokens[i + 2].value}(). Logs are stored and shared (CI output, crash reports, browser consoles). Remove it or log a non-reversible identifier instead.`,
         });
       }
     }
@@ -136,7 +147,12 @@ function looksLikeKeyMaterial(literal: string): "hex" | "mnemonic" | undefined {
   const v = literal.slice(1, -1).trim();
   const hex = v.replace(/^0x/i, "");
   // low-entropy values such as 000…001 are well-known development seeds, not leaks
-  if (/^[0-9a-fA-F]{64}$/.test(hex) && new Set(hex.toLowerCase()).size >= 8) return "hex";
+  // placeholders such as a1b2c3d4…, abcdef0123…, or the same 16 or 32 characters repeated, are not keys
+  const placeholder = (h: string) =>
+    h.slice(0, 32) === h.slice(32) ||
+    h.slice(0, 16).repeat(4) === h ||
+    /(?:0123456789|123456789a|abcdef|a1b2c3d4|deadbeef|cafebabe|feedface)/i.test(h);
+  if (/^[0-9a-fA-F]{64}$/.test(hex) && new Set(hex.toLowerCase()).size >= 8 && !placeholder(hex)) return "hex";
   const words = v.split(/\s+/);
   if ([12, 15, 18, 21, 24].includes(words.length) && words.every((w) => /^[a-z]{3,8}$/.test(w)) && new Set(words).size >= 8) return "mnemonic";
   return undefined;
@@ -251,7 +267,8 @@ function indexedDbStorage(tokens: Token[]): RawFinding[] {
 }
 
 /** Names of values that must be unpredictable: secrets, plus nonces, salts and randomness. */
-const isRandomnessName = (name: string) => isSecretName(name) || /(nonce|salt|rand(om)?(ness)?|blind|entropy|coin)(?![a-z])/i.test(name.replace(/([a-z0-9])([A-Z])/g, "$1_$2"));
+// "random" on its own is an adjective (randomHex for a mock address, randomDelay); the nouns are what must be secret
+const isRandomnessName = (name: string) => isSecretName(name) || /(^|_)(nonce|salt|randomness|rand|blind(ing)?(_factor)?|entropy|coin_?seed)(?![a-z])/i.test(name.replace(/([a-z0-9])([A-Z])/g, "$1_$2"));
 
 /** The tokens of the statement around index i: back to the previous `;`, or a `{`/`}` outside any parentheses. */
 function statementAround(tokens: Token[], i: number): Token[] {
@@ -316,7 +333,9 @@ function insecureRandomness(tokens: Token[]): RawFinding[] {
   const constOnly = (name: string) => declaredConst.has(name) && (assignments.get(name) ?? 0) <= 1;
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 0; i + 3 < tokens.length; i++) {
-      const direct = isMathRandom(i);
+      // `if (crypto.getRandomValues) … else Math.random()`: a fallback for environments without crypto
+      const fallback = (k: number) => tokens.slice(Math.max(0, k - 40), k).some((t) => t.value === "getRandomValues" || t.value === "randomBytes") && tokens.slice(Math.max(0, k - 30), k).some((t) => t.value === "else");
+      const direct = isMathRandom(i) && !fallback(i);
       const viaName = pass === 1 && tokens[i].kind === "ident" && tainted.has(tokens[i].value) && tokens[i + 1]?.value !== "=" && tokens[i - 1]?.value !== "const" && tokens[i - 1]?.value !== "let" && tokens[i - 1]?.value !== "function";
       if (!(pass === 0 ? direct : viaName)) continue;
       const target = assignedName(tokens, i);

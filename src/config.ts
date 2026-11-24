@@ -48,7 +48,7 @@ export function withPreset(config: Config): Config {
 export const DEFAULT_CONFIG: Config = {
   disable: [],
   failOn: "high",
-  minSeverity: "info",
+  minSeverity: "low",
   minConfidence: "low",
   ignore: [],
   plugins: [],

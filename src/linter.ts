@@ -154,12 +154,34 @@ function bidiCharacters(source: string): RawFinding[] {
   return out;
 }
 
+/** Deploy and end-to-end scripts stub out witnesses they never run (zeros as a voter secret, say). */
+const SCRIPT_FILE = /(^|\/)(e2e[^/]*|[^/]*deploy[^/]*|[^/]*\.e2e)\.[cm]?[jt]sx?$/i;
+
 function analyze(source: string, file: string, options: LintOptions): Analysis {
-  if (isSdkFile(file)) return { raw: isTestFile(file) ? [] : [...lintSdkSource(source), ...bidiCharacters(source)] };
+  if (isSdkFile(file)) {
+    if (isTestFile(file)) return { raw: [] };
+    const raw = [...lintSdkSource(source), ...bidiCharacters(source)];
+    return { raw: SCRIPT_FILE.test(file.split("\\").join("/")) ? raw.filter((f) => f.ruleId !== "MS113") : raw };
+  }
   const program = parse(source);
   const analyzer = new Analyzer(program, options.resolver, options.absolutePath);
   const raw = analyzer.run();
   raw.push(...checkAuthWrites(program), ...checkStructural(program), ...checkContract(program), ...bidiCharacters(source));
+  // one finding per helper: the same `assertOnlyOwner()` called from twelve circuits is one bug, not twelve
+  const byHelper = new Map<string, RawFinding>();
+  for (let i = 0; i < raw.length; i++) {
+    const f = raw[i];
+    const helper = f.ruleId === "MS001" ? f.message.match(/is passed to '([^']+)'/)?.[1] : undefined;
+    if (!helper) continue;
+    const first = byHelper.get(helper);
+    if (!first) {
+      byHelper.set(helper, f);
+      continue;
+    }
+    const extra = Number(first.message.match(/\(also called from (\d+) other places?\)/)?.[1] ?? 0) + 1;
+    first.message = first.message.replace(/ \(also called from \d+ other places?\)/, "") + ` (also called from ${extra} other place${extra === 1 ? "" : "s"})`;
+    raw.splice(i--, 1);
+  }
   // an owner field anyone can overwrite is MS011's finding; MS034 would say the same thing
   const ownerWrites = new Set(raw.filter((f) => f.ruleId === "MS011").map((f) => `${f.loc.line}:${f.loc.col}`));
   for (let i = raw.length - 1; i >= 0; i--) if (raw[i].ruleId === "MS034" && ownerWrites.has(`${raw[i].loc.line}:${raw[i].loc.col}`)) raw.splice(i, 1);

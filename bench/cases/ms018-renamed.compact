@@ -1,5 +1,5 @@
 // expect: MS018
-// note: set with a neutral name and no membership check (known limit)
+// note: set with a neutral name, caught because it receives hashes of the caller secret and nothing checks it
 pragma language_version >= 0.28.0;
 import CompactStandardLibrary;
 

@@ -21,7 +21,7 @@ const BUILTINS = new Set([
   "receive", "send", "sendImmediate", "mergeCoin", "mergeCoinImmediate", "createZswapInput",
   "createZswapOutput", "burnAddress", "blockTimeLessThan", "blockTimeGreaterThan",
   "blockTimeGte", "blockTimeLt", "map", "fold", "slice", "assert",
-  "sendShielded", "sendUnshielded", "mintShieldedToken", "mintUnshieldedToken", "receiveShielded", "receiveUnshielded",
+  "sendShielded", "sendImmediateShielded", "sendUnshielded", "mergeCoin", "mergeCoinImmediate", "evolveNonce", "blockTimeLte", "blockTimeGt", "jubjubSchnorrVerify", "mintShieldedToken", "mintUnshieldedToken", "receiveShielded", "receiveUnshielded",
   "unshieldedBalance", "unshieldedBalanceLt", "unshieldedBalanceGte", "unshieldedBalanceLte", "unshieldedBalanceGt",
   "shieldedBurnAddress", "kernel", "self", "left", "right",
 ]);
@@ -172,9 +172,11 @@ function authFields(ctx: Ctx): Set<string> {
   const out = new Set<string>();
   for (const c of ctx.circuits.values()) {
     for (const s of stmts(c.body ?? [])) {
-      for (const e of stmtExprs(s)) {
-        if (e.kind !== "call" || e.callee.kind !== "ident" || e.callee.name !== "assert" || !e.args[0]) continue;
-        for (const x of exprs(e.args[0])) {
+      // a comparison in an if decides who gets through just like an assert does
+      const conditions: Expr[] = s.kind === "if" ? [s.test] : [];
+      for (const e of stmtExprs(s)) if (e.kind === "call" && e.callee.kind === "ident" && e.callee.name === "assert" && e.args[0]) conditions.push(e.args[0]);
+      for (const cond of conditions) {
+        for (const x of exprs(cond)) {
           if (x.kind === "binary" && (x.op === "==" || x.op === "!=")) {
             const l = ledgerRef(x.left, ctx);
             const r = ledgerRef(x.right, ctx);

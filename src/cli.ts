@@ -304,7 +304,8 @@ async function main(argv: string[]): Promise<void> {
 
   const options: LintOptions = {
     disable: disable ?? config.disable,
-    minSeverity: minSeverity ?? config.minSeverity,
+    // collect everything, then hide below the chosen severity here, so the hidden count can be shown
+    minSeverity: "info",
     minConfidence: minConfidence ?? config.minConfidence,
     ignore: [...(config.ignore ?? []), ...ignore],
     sdk: sdk ?? config.sdk ?? true,
@@ -361,6 +362,13 @@ async function main(argv: string[]): Promise<void> {
     findings = lintFiles(paths, options); // re-scan after fixing
   }
 
+  // informational notes (unused code, a missing pragma) are hidden unless asked for: they are
+  // worth a look, not worth drowning a security report in
+  const shownMin = minSeverity ?? config.minSeverity ?? "low";
+  const allFindings = findings;
+  findings = findings.filter((f) => SEVERITY_ORDER.indexOf(f.severity) <= SEVERITY_ORDER.indexOf(shownMin));
+  const hiddenNotes = allFindings.filter((f) => !f.suppressed && !findings.includes(f)).length;
+
   if (writeBaseline) {
     const data = createBaseline(findings);
     writeFileSync(writeBaseline, JSON.stringify(data, null, 2) + "\n");
@@ -382,16 +390,17 @@ async function main(argv: string[]): Promise<void> {
 
   if (badge) writeFileSync(badge, JSON.stringify(badgeJson(findings)) + "\n");
 
+  const hiddenNote = hiddenNotes && format === "text" ? `  ${hiddenNotes} lower-severity finding${hiddenNotes === 1 ? "" : "s"} hidden (below ${shownMin}: unused code, a missing pragma and similar); --min-severity info shows everything.\n` : "";
   if (output) {
     writeFileSync(output, report + "\n");
-    process.stdout.write(text(color) + "\n");
+    process.stdout.write(text(color) + "\n" + hiddenNote);
   } else {
-    process.stdout.write(report + "\n");
+    process.stdout.write(report + "\n" + hiddenNote);
   }
 
   // parts of files that were not analyzed: say so on stderr, so a clean report is not mistaken for full coverage
-  const partial = new Set(findings.filter((f) => f.ruleId === "MS000").map((f) => f.file));
-  const versionWarned = new Set(findings.filter((f) => f.ruleId === "MS033").map((f) => f.file));
+  const partial = new Set(allFindings.filter((f) => f.ruleId === "MS000").map((f) => f.file));
+  const versionWarned = new Set(allFindings.filter((f) => f.ruleId === "MS033").map((f) => f.file));
   if (partial.size || versionWarned.size) {
     const parts = [
       partial.size ? `${partial.size} file(s) could not be fully parsed (MS000)` : "",

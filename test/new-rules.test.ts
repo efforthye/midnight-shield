@@ -432,3 +432,36 @@ export circuit b(): [] {
     assert.throws(() => validateConfig({ preset: "loose" }));
   });
 });
+
+describe("fixes from the field test", () => {
+  const c = (body: string) => `${HEADER}\n${body}`;
+  it("MS007 needs a key-like type, and catches neutral 32-byte witnesses but not display text", () => {
+    assert.ok(!has(c(`export ledger treasury: Uint<64>;\nexport circuit init(seedTreasury: Uint<64>): [] { treasury = disclose(seedTreasury); }`), "MS007"));
+    assert.ok(has(c(`export ledger k: Bytes<32>;\nwitness getUserMaterial(): Bytes<32>;\nexport circuit f(): [] { k = disclose(getUserMaterial()); }`), "MS007"));
+    assert.ok(!has(c(`export ledger n: Bytes<32>;\nwitness getCustomName(): Bytes<32>;\nexport circuit f(): [] { n = disclose(getCustomName()); }`), "MS007"));
+  });
+  it("MS004 treats two calls of a randomness witness as two values, but a reused local as reuse", () => {
+    const w = `export ledger a: Bytes<32>;\nexport ledger b: Bytes<32>;\nwitness r(): Bytes<32>;\n`;
+    assert.ok(!has(c(`${w}export circuit f(x: Uint<64>, y: Uint<64>): [] { a = disclose(persistentCommit<Uint<64>>(x, r())); b = disclose(persistentCommit<Uint<64>>(y, r())); }`), "MS004"));
+    assert.ok(has(c(`${w}export circuit f(x: Uint<64>, y: Uint<64>): [] { const s = r(); a = disclose(persistentCommit<Uint<64>>(x, s)); b = disclose(persistentCommit<Uint<64>>(y, s)); }`), "MS004"));
+  });
+  it("MS018 finds a neutrally named set of secret hashes that nothing checks", () => {
+    assert.ok(has(c(`export ledger seen: Set<Bytes<32>>;\nwitness secretKey(): Bytes<32>;\nexport circuit spend(): [] { seen.insert(disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "t:n:"), secretKey()]))); }`), "MS018"));
+  });
+  it("MS011 counts a comparison in an if as an authorization use", () => {
+    assert.ok(has(c(`export ledger boss: Bytes<32>;\nexport ledger n: Counter;\nwitness secretKey(): Bytes<32>;\nexport circuit setBoss(k: Bytes<32>): [] { boss = disclose(k); }\nexport circuit reset(): [] { if (disclose(persistentHash<Bytes<32>>(secretKey()) == boss)) { n.resetToDefault(); } }`), "MS011"));
+  });
+  it("MS102 marks an intended seed display as low, MS103 skips placeholders, MS105 skips fallbacks and adjectives", () => {
+    assert.equal(lintSource("console.log(`SAVE THIS SEED: ${seed}`);", "a.ts")[0].severity, "low");
+    assert.equal(lintSource("logger.info(`seed ${seed}`);", "a.ts")[0].severity, "high");
+    assert.ok(!has(`const SECRET_HEX = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";`, "MS103", "a.ts"));
+    assert.ok(!has(`function rb(n) { const buf = new Uint8Array(n); if (crypto.getRandomValues) { crypto.getRandomValues(buf); } else { for (let i = 0; i < n; i++) buf[i] = Math.floor(Math.random() * 256); } return buf; }\nconst salt = rb(32);`, "MS105", "a.ts"));
+    assert.ok(!has("const randomHex = Array.from({ length: 62 }, () => Math.floor(Math.random() * 16).toString(16)).join('');", "MS105", "a.ts"));
+  });
+  it("MS008 skips writes keyed by the caller's secret that do not read the old value", () => {
+    const base = `export ledger tree: MerkleTree<10, Bytes<32>>;\nexport ledger att: Map<Bytes<32>, Uint<64>>;\nwitness sk(): Bytes<32>;\nwitness path(): MerkleTreePath<10, Bytes<32>>;\nexport circuit leafOf(s: Bytes<32>): Bytes<32> { return persistentHash<Vector<2, Bytes<32>>>([pad(32, "t:l:"), s]); }\n`;
+    const body = `const s = sk();\n  const p = path();\n  assert(disclose(p.leaf == leafOf(s)), "x");\n  assert(tree.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(p))), "y");\n  `;
+    assert.ok(!has(c(`${base}export circuit attest(v: Uint<64>): [] {\n  ${body}att.insert(disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "t:a:"), s])), disclose(v));\n}`), "MS008"));
+    assert.ok(has(c(`${base}export circuit claim(): [] {\n  ${body}const k = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "t:a:"), s]));\n  att.insert(k, (att.lookup(k) + 1) as Uint<64>);\n}`), "MS008"));
+  });
+});

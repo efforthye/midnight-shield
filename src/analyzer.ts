@@ -100,6 +100,12 @@ function union(infos: Info[]): Info {
 const SECRET_WORDS = new Set(["sk", "secret", "seed", "mnemonic", "password", "passphrase", "privkey"]);
 
 /** Does an identifier look like it names a secret? (`secretKey`, `localSk`, `_secret`, `privateKey`) */
+/** Types that can hold key material: bytes, field elements and vectors of them (not numbers, flags or strings). */
+function keyLikeType(t: TypeRef | undefined): boolean {
+  if (!t) return true;
+  return !["Uint", "Boolean", "Opaque"].includes(t.name);
+}
+
 const versionKey = (v: string) => v.split(".").slice(0, 2).map((x) => x.padStart(4, "0")).join(".");
 
 /** MS033: a pragma whose version range lies outside the tested range. */
@@ -388,7 +394,7 @@ export class Analyzer {
       ownpkDirect: false,
       bits: this.typeBits(p.type),
       type: p.type,
-      rawSecret: isSecretName(p.name) ? new Set([`p:${p.name}`]) : undefined,
+      rawSecret: isSecretName(p.name) && keyLikeType(p.type) ? new Set([`p:${p.name}`]) : undefined,
     };
   }
 
@@ -721,8 +727,17 @@ export class Analyzer {
           return out;
         }
         // ledger write: insert, increment, write, push, ...
-        frame.nullifier.writes = true;
+        // `map.insert(hash(secret, …), value)` without reading the old value is idempotent per
+        // caller: repeating it rewrites the same entry, so it needs no nullifier (MS008)
+        const keyedOnce =
+          callee.property === "insert" &&
+          args.length === 2 &&
+          this.fromWitness(e.args[0], frame) &&
+          !args[0].rawSecret?.size &&
+          !e.args.slice(1).some((v) => [...walkExpr(v)].some((x) => x.kind === "call" && x.callee.kind === "member" && rootIdent(x.callee.object) === root));
+        const wroteBefore = frame.nullifier.writes;
         for (const a of args) this.sink(a, e.loc, frame, true, `${root}.${callee.property}()`);
+        frame.nullifier.writes = keyedOnce ? wroteBefore : true;
         return empty();
       }
       const out = union([obj, ...args]);
@@ -763,7 +778,7 @@ export class Analyzer {
       return {
         sources: new Set([`w:${witnessName}`]),
         rawWitness: new Set([witnessName]),
-        rawSecret: isSecretName(witnessName.slice(witnessName.lastIndexOf("_") + 1)) || isSecretName(witnessName) ? new Set([`w:${witnessName}`]) : undefined,
+        rawSecret: this.secretWitness(witnessName, w.returnType) ? new Set([`w:${witnessName}`]) : undefined,
         constant: false,
         ownpkDirect: false,
         bits: this.typeBits(w.returnType),
@@ -809,6 +824,20 @@ export class Analyzer {
     out.rawSecret = undefined;
     out.identity = undefined;
     return out;
+  }
+
+  /**
+   * A witness that holds a secret: named like one (and typed like key material), or,
+   * whatever its name, a Bytes<32> witness the contract hashes into its state or
+   * identity (a secret key by role), or a raw Bytes<32> witness with a neutral name
+   * that is neither a hash nor an identifier.
+   */
+  private secretWitness(name: string, type: TypeRef | undefined): boolean {
+    const short = name.slice(name.lastIndexOf("_") + 1);
+    if ((isSecretName(short) || isSecretName(name)) && keyLikeType(type)) return true;
+    if (!type || type.name !== "Bytes" || !/^Bytes<\s*32\s*>$/.test(type.text.replace(/\s/g, ""))) return false;
+    if (/(hash|commit|root|digest|id$|^id|address|addr|pk$|public|nonce|salt|rand|path|leaf|tag|color|domain|nullifier|name|label|title|text|message|memo|ur[il]|data|value|meta|description|content|note|cid)/i.test(short)) return false;
+    return true;
   }
 
   /** Whether an expression depends on a witness value (directly, through locals, or through helper calls). */
@@ -957,7 +986,11 @@ export class Analyzer {
         const key = exprText(randExpr);
         const valueKey = exprText(e.args[0]);
         const prev = frame.commitRand.get(key);
-        if (prev && prev.value !== valueKey) {
+        // two calls of a witness (getRandomness(), getRandomness()) are two values: a witness can
+        // return fresh bytes on every call. Reuse means the same local or the same stored value.
+        const r = randExpr.kind === "call" && randExpr.callee.kind === "ident" && randExpr.callee.name === "disclose" && randExpr.args[0] ? randExpr.args[0] : randExpr;
+        const freshEachCall = r.kind === "call" && r.callee.kind === "ident" && !!this.resolveName(this.witnesses, r.callee.name, frame);
+        if (prev && prev.value !== valueKey && !freshEachCall) {
           this.report(
             "MS004",
             e.loc,
