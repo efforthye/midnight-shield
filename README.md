@@ -10,8 +10,8 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 [![CI](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
-![Rules](https://img.shields.io/badge/rules-53-purple)
-![Tests](https://img.shields.io/badge/tests-355%20passing-brightgreen)
+![Rules](https://img.shields.io/badge/rules-55-purple)
+![Tests](https://img.shields.io/badge/tests-367%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
 
@@ -56,7 +56,6 @@ The Compact compiler already stops you from disclosing witness data by accident.
 | Unguarded `sendShielded` or mint | Anyone can drain the contract or mint tokens | [MS019](docs/rules/MS019.md), [MS020](docs/rules/MS020.md) |
 | Witness implemented as `new Uint8Array(32)` | The contract's "randomness" is all zeros | [MS113](docs/rules/MS113.md) |
 | Seed in a `VITE_` variable | The bundler ships it to every visitor | [MS119](docs/rules/MS119.md) |
-| [MS120](docs/rules/MS120.md) | `secret-from-public-data` | 🔴 High | medium | A secret computed only from public values such as an address or a public key, so anyone can recompute it |
 
 Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint** is to Noir: a static analyzer that catches issues before deploy, with rules built around Midnight's privacy model.
 
@@ -67,6 +66,7 @@ Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint*
 - 🎲 **Entropy-aware.** Knows a `Boolean` vote has 1 bit of secret entropy and a `Bytes<32>` key has 256, so it flags brute-forceable hashes without crying wolf.
 - 🎯 **Honest about certainty.** Every finding has a severity *and* a confidence. Rules that rely on names or guess intent say so.
 - 🧪 **Measured, in CI.** A labeled benchmark of vulnerable, tricky and safe code reports precision and recall per rule, with every known miss listed ([results](bench/RESULTS.md)). 1,052 real files of the official examples and OpenZeppelin Contracts for Compact parse with zero errors, and each medium-or-worse finding on them is checked by hand. Examples are compiled with the real Compact compiler.
+- 🔗 **Contract and DApp read together.** When a scan covers both, Midnight Shield matches the witnesses a contract declares with their TypeScript implementations, so it can tell that `bidSalt` (a name no rule would guess) is a commitment's randomness, and that its implementation returns zeros (MS121). It also follows state across circuits: a field anyone can set in one circuit and another circuit trusts (MS034).
 - 🔁 **Privacy diff on every pull request.** The GitHub Action comments what a change newly makes public and which findings it adds or fixes, before it is merged.
 - 🩹 **Suggested fixes.** Each finding comes with the flagged line rewritten, as a diff you can copy.
 - 🧰 **Everywhere you work.** CLI, web playground, VS Code, GitHub Action with SARIF, Markdown reports, Claude Code skill, plugin API.
@@ -175,6 +175,19 @@ npx midnight-shield contracts/ --baseline .midnight-shield-baseline.json
 
 Baseline entries are matched by a fingerprint of the rule and the code line, so moving code around does not break them. `--show-suppressed` lists everything that is hidden by a baseline or an inline comment, for audits.
 
+Or start from a preset:
+
+| Preset | Shows | Fails the build on | Suppressions |
+| --- | --- | --- | --- |
+| `recommended` | low severity and up, medium confidence and up | high, critical | as written |
+| `strict` | everything | medium and up | must give a reason |
+
+```bash
+npx midnight-shield contracts/ --preset recommended
+```
+
+or `"preset": "recommended"` in the config file. Settings next to it in the config, and command-line options, override the preset.
+
 ### 5. Configure
 
 ```bash
@@ -190,7 +203,9 @@ npx midnight-shield --init   # creates midnight-shield.config.json
   "ignore": ["**/test/**"],
   "baseline": ".midnight-shield-baseline.json",
   "plugins": ["./tools/our-rules.mjs"],
-  "sdk": true
+  "sdk": true,
+  "preset": "recommended",
+  "requireSuppressionReason": false
 }
 ```
 
@@ -202,6 +217,8 @@ const h = persistentHash<Vector<2, Bytes<32>>>([tag, sk]);
 ```
 
 `shield-disable-line` and `shield-disable-file` work the same way. Leave out the rule ID to suppress every rule.
+
+The reason after `--` is kept with the finding: `--show-suppressed` prints it, JSON has it as `suppressionReason`, and SARIF records it as the suppression's `justification`, so GitHub code scanning shows why a finding was dismissed. With `--require-suppression-reason` (or `"requireSuppressionReason": true`, or the `strict` preset), a comment without a reason no longer hides the finding.
 
 ### 6. Report
 
@@ -252,6 +269,7 @@ npx midnight-shield contracts/ --format json                    # scripts and AI
 | [MS031](docs/rules/MS031.md) | `field-arithmetic-overflow` | 🔴 High | medium | Arithmetic on a Field ledger value wraps around silently instead of failing |
 | [MS032](docs/rules/MS032.md) | `unused-local` | ⚪ Info | high | A local constant is computed but never used |
 | [MS033](docs/rules/MS033.md) | `unsupported-language-version` | 🔵 Low | high | The pragma asks for a Compact version outside the tested range, so new syntax may be misread |
+| [MS034](docs/rules/MS034.md) | `untrusted-state-dependency` | 🔴 High | medium | A ledger field any caller can set is trusted by another circuit in a check or a token transfer |
 
 **DApp code (TypeScript / JavaScript)**
 
@@ -278,6 +296,8 @@ Secrets are recognized by name (`seed`, `secretKey`, `mnemonic`, …) and by whe
 | [MS117](docs/rules/MS117.md) | `secret-sent-to-analytics` | 🔴 High | medium | A secret is passed to an analytics or error-tracking call |
 | [MS118](docs/rules/MS118.md) | `unsafe-html` | 🟡 Medium | medium | HTML from a variable is written into the page (innerHTML, dangerouslySetInnerHTML, document.write) |
 | [MS119](docs/rules/MS119.md) | `secret-in-public-env` | 🟣 Critical | high | A secret is read from a VITE_/NEXT_PUBLIC_/REACT_APP_ variable, which the bundler ships to every visitor |
+| [MS120](docs/rules/MS120.md) | `secret-from-public-data` | 🔴 High | medium | A secret computed only from public values such as an address or a public key, so anyone can recompute it |
+| [MS121](docs/rules/MS121.md) | `weak-witness-implementation` | 🟣 Critical | high | Contract and DApp together: a witness the contract uses as randomness or a secret key is implemented with zeros, a clock, `Math.random()` or a constant |
 
 Need a rule for your own conventions? [Write a plugin](docs/custom-rules.md).
 
@@ -439,7 +459,7 @@ Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` 
 
 ## Accuracy
 
-**Benchmark.** 164 labeled files: 111 expected findings reported, 3 missed, 0 false positives. The cases are the plain vulnerable pattern for each rule, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
+**Benchmark.** 169 labeled files: 115 expected findings reported, 3 missed, 0 false positives. The ten core rules get the most cases:
 
 | Rule | Expected findings | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -458,7 +478,7 @@ All rules together:
 
 | Rule | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| **All** | **111** | **3** | **0** | **100%** | **97%** |
+| **All** | **115** | **3** | **0** | **100%** | **97%** |
 
 The cases are written by the author, so treat the numbers as a regression check and an honest list of known misses, not an independent audit. While adding cases, a few results first looked like false positives; on review the finding was right and the label was wrong (for example, circuit parameters are private in Compact, so a hashed 8-bit parameter can be brute-forced). Each such case says why in a `// note:` line. CI also compiles every Compact case with the real Compact compiler and lists any that do not compile in the job summary. The per-rule table and the known misses are in [bench/RESULTS.md](bench/RESULTS.md), and each rule's page has a **Known limits** section.
 
@@ -470,6 +490,7 @@ The cases are written by the author, so treat the numbers as a regression check 
 | `meshjs-lending-borrow.compact` | MS008, MS009, MS013 | found | [link](https://github.com/MeshJS/midnight-contracts-wizard/issues/1) |
 | `meshjs-oracle-submit.compact` | MS008, MS009, MS013 | found | [link](https://github.com/MeshJS/midnight-contracts-wizard/issues/1) |
 | `official-leaderboard-storage.ts` | MS104 | found | [link](https://github.com/midnightntwrk/midnight-examples) |
+| `pause-flag-unguarded.compact` | MS034 | found | report pending |
 | `role-key-from-public-key.ts` | MS120 | found | report pending |
 | `secret-key-as-map-key.compact` | MS007 | found | report pending |
 
@@ -510,7 +531,7 @@ Rules were checked against the detector lists of [Slither](https://github.com/cr
 | Bug class | Slither / Circomspect | Midnight Shield |
 | --- | --- | --- |
 | Unprotected value transfer | `arbitrary-send-eth` | MS019 |
-| Unprotected privileged change | `protected-vars`, `suicidal` | MS011, MS020 |
+| Unprotected privileged change | `protected-vars`, `suicidal` | MS011, MS020, MS034 |
 | Caller identity from an untrusted source | `tx-origin` | MS001, MS013 |
 | Weak randomness | `weak-prng` | MS004, MS105, MS113 |
 | Tautologies | `tautology`, `tautological-compare` | MS017 |
@@ -544,8 +565,8 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 
 | Check | What it proves | Command |
 | --- | --- | --- |
-| **Unit and integration tests** (355 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
-| **Benchmark** | 164 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
+| **Unit and integration tests** (367 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
+| **Benchmark** | 169 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
 | **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is checked by hand and listed with the reason in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |
@@ -560,7 +581,7 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 - [x] **v0.3** Merkle and secret rules, corpus verification, real-compiler CI
 - [x] **v0.4** Disclosure map, confidence, baselines, Markdown, plugins, autofix, TypeScript checks, playground, VS Code extension, npm package
 - [x] **v0.5** Repository and folder scanning in the playground, project logo, GitHub Packages
-- [x] **Next** Privacy diff on pull requests, status badge, suggested fixes, accuracy benchmark, 53 rules (MS011–MS033, MS103–MS120)
+- [x] **Next** Privacy diff on pull requests, status badge, suggested fixes, accuracy benchmark, 55 rules (MS011–MS034, MS103–MS121)
 - [ ] Witness implementations checked against the contract that declares them (beyond MS113)
 - [ ] MCP server and language server
 - [ ] Ignore comments with a recorded reason, and strict / recommended presets

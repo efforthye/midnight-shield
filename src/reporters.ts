@@ -89,7 +89,7 @@ export function formatText(all: Finding[], fileCount: number, options: TextOptio
     if (lines.length) lines.push("");
     lines.push(c(BOLD, `Suppressed (${suppressed.length})`));
     for (const f of suppressed) {
-      lines.push(`  ${c(DIM, `${f.file}:${f.line}:${f.col}`)}  ${f.ruleId} ${f.ruleName}  ${c(DIM, `[${f.suppressed}]`)}`);
+      lines.push(`  ${c(DIM, `${f.file}:${f.line}:${f.col}`)}  ${f.ruleId} ${f.ruleName}  ${c(DIM, `[${f.suppressed}]`)}${f.suppressionReason ? `  ${c(DIM, "— " + f.suppressionReason)}` : ""}`);
     }
   }
 
@@ -180,7 +180,7 @@ export function formatSarif(findings: Finding[], extraRules: RuleMeta[] = []): s
           ],
           partialFingerprints: { "midnightShield/v1": f.fingerprint },
           properties: { confidence: f.confidence },
-          ...(f.suppressed ? { suppressions: [{ kind: f.suppressed === "inline" ? "inSource" : "external" }] } : {}),
+          ...(f.suppressed ? { suppressions: [{ kind: f.suppressed === "inline" ? "inSource" : "external", ...(f.suppressionReason ? { justification: f.suppressionReason } : {}) }] } : {}),
         })),
       },
     ],

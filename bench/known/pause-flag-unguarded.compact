@@ -1,0 +1,17 @@
+// expect: MS034
+// source: pending (public project; linked here once the maintainers have been told)
+// note: minimal reproduction. The "admin" circuit that opens and closes the jar has no caller check, and tipping relies on the flag.
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger jarOpen: Boolean;
+export ledger tipCount: Counter;
+
+export circuit setJarState(isOpen: Boolean): [] {
+  jarOpen = disclose(isOpen);
+}
+
+export circuit tip(): [] {
+  assert(jarOpen, "Tip jar is currently inactive");
+  tipCount.increment(1);
+}

@@ -5,9 +5,10 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { ImportResolver } from "./analyzer.js";
 import type { Program } from "./ast.js";
-import { lintSource, mapDisclosures, type BaselineFile, type DisclosureEntry, type Finding, type LintOptions } from "./linter.js";
+import { lintSource, mapDisclosures, toFindings, type BaselineFile, type DisclosureEntry, type Finding, type LintOptions } from "./linter.js";
 import { parse } from "./parser.js";
-import { isSdkFile } from "./sdk.js";
+import { isSdkFile, isTestFile } from "./sdk.js";
+import { linkWitnesses } from "./witness-link.js";
 
 const IGNORED_DIRS = new Set(["node_modules", ".git", "dist", "build", "managed", "coverage", ".cache"]);
 
@@ -85,7 +86,22 @@ function eachFile<T>(paths: string[], options: LintOptions, cwd: string, fn: (so
 }
 
 export function lintFiles(paths: string[], options: LintOptions = {}, cwd = process.cwd()): Finding[] {
-  return eachFile(paths, options, cwd, (src, rel, opts) => lintSource(src, rel, opts));
+  const sources = new Map<string, string>();
+  const findings = eachFile(paths, options, cwd, (src, rel, opts) => {
+    sources.set(rel, src);
+    return lintSource(src, rel, opts);
+  });
+  // MS121 needs the contract and the DApp together
+  if (options.sdk ?? true) {
+    const contracts = [...sources].filter(([f]) => f.endsWith(".compact")).map(([file, src]) => ({ file, program: parse(src) }));
+    const dapps = [...sources].filter(([f]) => isSdkFile(f) && !isTestFile(f)).map(([file, source]) => ({ file, source }));
+    const seen = new Set(findings.filter((f) => f.ruleId === "MS113").map((f) => `${f.file}:${f.line}`));
+    for (const l of linkWitnesses(contracts, dapps)) {
+      if (seen.has(`${l.file}:${l.raw.loc.line}`)) continue; // MS113 already says it by name
+      findings.push(...toFindings([l.raw], sources.get(l.file) ?? "", l.file, options));
+    }
+  }
+  return findings;
 }
 
 export function mapDisclosuresInFiles(paths: string[], options: LintOptions = {}, cwd = process.cwd()): DisclosureEntry[] {

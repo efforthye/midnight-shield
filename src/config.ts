@@ -21,6 +21,28 @@ export interface Config {
   plugins?: string[];
   /** also check TypeScript/JavaScript files (default true) */
   sdk?: boolean;
+  /** a starting set of options: "recommended" for adopting in CI, "strict" for audits */
+  preset?: PresetName;
+  /** inline suppressions only count when they give a reason (`-- why`) */
+  requireSuppressionReason?: boolean;
+}
+
+export type PresetName = "recommended" | "strict";
+
+/**
+ * recommended: what a team can turn on in CI on day one. Low-confidence and
+ *   informational findings are hidden, and only high or critical findings fail the build.
+ * strict: everything is shown, medium findings fail the build, and every
+ *   suppression must say why, so the suppressions double as an audit record.
+ */
+export const PRESETS: Record<PresetName, Config> = {
+  recommended: { minSeverity: "low", minConfidence: "medium", failOn: "high" },
+  strict: { minSeverity: "info", minConfidence: "low", failOn: "medium", requireSuppressionReason: true },
+};
+
+/** Settings from a preset, overridden by the settings written next to it. */
+export function withPreset(config: Config): Config {
+  return config.preset ? { ...PRESETS[config.preset], ...config } : config;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -56,7 +78,7 @@ export function validateConfig(raw: unknown, source = "config"): Config {
   const obj = raw as Record<string, unknown>;
   const out: Config = {};
   for (const key of Object.keys(obj)) {
-    if (!["disable", "failOn", "minSeverity", "minConfidence", "ignore", "baseline", "plugins", "sdk", "$schema"].includes(key)) throw new ConfigError(`${source}: unknown key "${key}"`);
+    if (!["disable", "failOn", "minSeverity", "minConfidence", "ignore", "baseline", "plugins", "sdk", "preset", "requireSuppressionReason", "$schema"].includes(key)) throw new ConfigError(`${source}: unknown key "${key}"`);
   }
   if (obj.disable !== undefined) {
     if (!Array.isArray(obj.disable) || !obj.disable.every((x) => typeof x === "string")) throw new ConfigError(`${source}: "disable" must be an array of rule IDs`);
@@ -88,6 +110,14 @@ export function validateConfig(raw: unknown, source = "config"): Config {
   if (obj.sdk !== undefined) {
     if (typeof obj.sdk !== "boolean") throw new ConfigError(`${source}: "sdk" must be true or false`);
     out.sdk = obj.sdk;
+  }
+  if (obj.preset !== undefined) {
+    if (obj.preset !== "recommended" && obj.preset !== "strict") throw new ConfigError(`${source}: "preset" must be "recommended" or "strict"`);
+    out.preset = obj.preset;
+  }
+  if (obj.requireSuppressionReason !== undefined) {
+    if (typeof obj.requireSuppressionReason !== "boolean") throw new ConfigError(`${source}: "requireSuppressionReason" must be true or false`);
+    out.requireSuppressionReason = obj.requireSuppressionReason;
   }
   if (obj.ignore !== undefined) {
     if (!Array.isArray(obj.ignore) || !obj.ignore.every((x) => typeof x === "string")) throw new ConfigError(`${source}: "ignore" must be an array of glob patterns`);

@@ -303,6 +303,14 @@ export function suggestFix(ruleId: string, message: string, line: string): Sugge
       const name = quoted(message);
       return { before, after: [], note: name ? `Remove '${name}', or use it in the check it was meant for.` : undefined };
     }
+    case "MS034": {
+      const field = [...message.matchAll(/'([^']+)'/g)][1]?.[1] ?? "value";
+      return {
+        before,
+        after: [`${ind}assert(deriveId(secretKey()) == ownerId, "only the owner sets ${field}");`, line],
+        note: "Or verify the value where it is used (a signature checked in the circuit, or a Merkle proof bound to the caller).",
+      };
+    }
     case "MS101": {
       const after = line.replace(/(["'])(?:https?|wss?):\/\/[^"']*\1/, 'process.env.MIDNIGHT_PROOF_SERVER ?? "http://localhost:6300"');
       return after === line ? undefined : { before, after: [after], note: "Run the proof server on the user's own machine." };

@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CONFIG_FILE, ConfigError, DEFAULT_CONFIG, loadConfig, type Config } from "./config.js";
+import { CONFIG_FILE, ConfigError, DEFAULT_CONFIG, loadConfig, withPreset, type Config, type PresetName } from "./config.js";
 import { applyEdits } from "./fixes.js";
 import { createBaseline, type Finding, type LintOptions } from "./linter.js";
 import { lintFiles, listTargetFiles, mapDisclosuresInFiles, readBaseline } from "./node.js";
@@ -42,6 +42,9 @@ Filtering:
                                            "none" never fails)
       --min-severity <severity>            Hide findings below this severity
       --min-confidence <confidence>        Hide findings below this confidence (high, medium, low)
+      --preset <recommended|strict>        Start from a preset (recommended: medium+ confidence, fail on high;
+                                           strict: everything, fail on medium, suppressions need a reason)
+      --require-suppression-reason         Ignore inline suppressions that do not say why (// … MS005 -- reason)
       --disable <MS001,MS005>              Skip rules
       --ignore <glob>                      Skip files matching a glob (repeatable)
       --no-sdk                             Do not check TypeScript/JavaScript files
@@ -148,6 +151,8 @@ async function main(argv: string[]): Promise<void> {
   let print: string | undefined;
   let command: string | undefined;
   let badge: string | undefined;
+  let preset: PresetName | undefined;
+  let requireReason: boolean | undefined;
   let color = (Boolean(process.stdout.isTTY) || Boolean(process.env.FORCE_COLOR)) && !process.env.NO_COLOR;
 
   for (let i = 0; i < argv.length; i++) {
@@ -195,6 +200,15 @@ async function main(argv: string[]): Promise<void> {
       }
       case "--min-severity":
         minSeverity = parseSeverity(value(), "--min-severity");
+        break;
+      case "--preset": {
+        const p = value();
+        if (p !== "recommended" && p !== "strict") fail(`--preset must be recommended or strict, not ${p}`);
+        preset = p as PresetName;
+        break;
+      }
+      case "--require-suppression-reason":
+        requireReason = true;
         break;
       case "--min-confidence":
         minConfidence = parseConfidence(value(), "--min-confidence");
@@ -255,6 +269,8 @@ async function main(argv: string[]): Promise<void> {
   let config: Config;
   try {
     config = loadConfig(configPath) ?? {};
+    // a --preset on the command line replaces the config file's preset; the file's own settings still apply
+    config = withPreset(preset ? { ...config, preset } : config);
   } catch (e) {
     if (e instanceof ConfigError) fail(e.message);
     throw e;
@@ -295,6 +311,7 @@ async function main(argv: string[]): Promise<void> {
     plugins,
     baseline,
     includeSuppressed: true,
+    requireSuppressionReason: requireReason ?? config.requireSuppressionReason,
   };
   const failLevel = failOn ?? config.failOn ?? "high";
   if (paths.length === 0) paths.push(".");

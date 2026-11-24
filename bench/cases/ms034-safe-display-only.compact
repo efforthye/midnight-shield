@@ -1,0 +1,8 @@
+// expect: none
+// note: anyone can write it, but nothing relies on it
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger message: Bytes<32>;
+export circuit post(m: Bytes<32>): [] { message = disclose(m); }
+export circuit read(): Bytes<32> { return message; }

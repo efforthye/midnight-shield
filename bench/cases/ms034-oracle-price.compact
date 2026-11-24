@@ -1,0 +1,12 @@
+// expect: MS034
+// note: anyone sets the price that another circuit trusts
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger price: Uint<128>;
+export ledger debt: Uint<128>;
+export circuit setPrice(p: Uint<128>): [] { price = disclose(p); }
+export circuit borrow(a: Uint<128>, c: Uint<128>): [] {
+  assert(disclose(c) * price >= disclose(a), "undercollateralized");
+  debt = disclose(a);
+}

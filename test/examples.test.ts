@@ -4,8 +4,8 @@ import { lintFiles } from "../src/node.js";
 import { RULES } from "../src/rules.js";
 
 const SDK_RULES = ["MS101", "MS102", "MS103", "MS104", "MS105", "MS106", "MS107", "MS108", "MS109", "MS110", "MS111", "MS112", "MS113", "MS114", "MS115", "MS116", "MS117", "MS118", "MS119", "MS120"];
-// MS030 (invisible direction characters) and MS033 (language version) are tested in new-rules.test.ts rather than planted in an example
-const NOT_IN_EXAMPLES = ["MS000", "MS006", "MS030", "MS033"];
+// MS030 (invisible direction characters), MS033 (language version) and MS121 (contract plus DApp) are tested in new-rules.test.ts rather than planted in an example
+const NOT_IN_EXAMPLES = ["MS000", "MS006", "MS030", "MS033", "MS121"];
 
 describe("bundled examples", () => {
   it("the vulnerable examples trigger every Compact rule exactly once", () => {

@@ -534,6 +534,71 @@ function unusedLocals(program: Program): RawFinding[] {
   return out;
 }
 
+
+/**
+ * MS034: state that anyone can set is trusted by another circuit. An exported
+ * circuit with no caller check writes a ledger field from a parameter or a
+ * witness, and another circuit relies on that field in an assert or in the
+ * amount or recipient of a token transfer (the oracle-price pattern).
+ */
+const HASHING_FNS = new Set(["persistentHash", "transientHash"]);
+
+function untrustedStateDependency(program: Program, ctx: Ctx): RawFinding[] {
+  const out: RawFinding[] = [];
+  const params = (c: Circuit) => new Set(c.params.map((p) => p.name));
+  const callerControlled = (e: Expr, ps: Set<string>) =>
+    [...exprs(e)].some((x) => (x.kind === "ident" && ps.has(x.name)) || (x.kind === "call" && x.callee.kind === "ident" && ctx.witnesses.has(x.callee.name)));
+  // fields written from caller-controlled values in unchecked exported circuits; a module's
+  // `export circuit` is exported to the importing contract, which decides what it exposes
+  const inModule = new Set<string>();
+  for (const d of program.decls) if (d.kind === "module") walk(d.decls, (x) => x.kind === "circuit" && inModule.add(x.name));
+  const open = new Map<string, { circuit: string; loc: Loc }>();
+  for (const c of ctx.circuits.values()) {
+    if (!c.exported || !c.body || c.name.startsWith("_") || inModule.has(c.name) || checksSomething(c, ctx)) continue;
+    const ps = params(c);
+    for (const s of stmts(c.body)) {
+      if (s.kind === "assign" && s.target.kind === "ident" && ctx.ledger.has(s.target.name) && callerControlled(s.value, ps) && !open.has(s.target.name)) {
+        open.set(s.target.name, { circuit: c.name, loc: s.loc });
+      }
+      for (const e of stmtExprs(s)) {
+        if (e.kind === "call" && e.callee.kind === "member" && e.callee.property === "write" && e.callee.object.kind === "ident" && ctx.ledger.has(e.callee.object.name) && e.args[0] && callerControlled(e.args[0], ps) && !open.has(e.callee.object.name)) {
+          open.set(e.callee.object.name, { circuit: c.name, loc: e.loc });
+        }
+      }
+    }
+  }
+  if (!open.size) return out;
+  const reads = (e: Expr, f: string) => [...exprs(e)].some((x) => (x.kind === "ident" && x.name === f) || (x.kind === "call" && x.callee.kind === "member" && x.callee.object.kind === "ident" && x.callee.object.name === f));
+  const TRANSFER = new Set([...SEND, ...MINT]);
+  for (const [field, w] of open) {
+    let use: { circuit: string; how: string } | undefined;
+    for (const c of ctx.circuits.values()) {
+      if (c.name === w.circuit || !c.body) continue;
+      // a parameter or local with the same name hides the ledger field (MS022)
+      if (c.params.some((p) => p.name === field) || [...stmts(c.body)].some((s) => s.kind === "const" && s.names.includes(field))) continue;
+      for (const s of stmts(c.body)) {
+        for (const e of stmtExprs(s)) {
+          if (e.kind !== "call" || e.callee.kind !== "ident") continue;
+          // an assert that recomputes a hash or commitment from the caller's secret and compares it
+          // with the stored value checks the caller against it (commit-reveal); it does not trust it
+          const opens = (x: Expr) => [...exprs(x)].some((y) => y.kind === "call" && y.callee.kind === "ident" && (COMMIT.has(y.callee.name) || HASHING_FNS.has(y.callee.name) || ctx.witnesses.has(y.callee.name)));
+          if (e.callee.name === "assert" && e.args[0] && reads(e.args[0], field) && !opens(e.args[0])) use ??= { circuit: c.name, how: "a check" };
+          if (TRANSFER.has(e.callee.name) && e.args.some((a) => reads(a, field))) use ??= { circuit: c.name, how: `a token ${MINT.has(e.callee.name) ? "mint" : "transfer"}` };
+        }
+      }
+    }
+    if (!use) continue;
+    out.push({
+      ruleId: "MS034",
+      severity: "high",
+      confidence: "medium",
+      loc: w.loc,
+      message: `'${w.circuit}' lets any caller set '${field}' (no caller check), and '${use.circuit}' relies on '${field}' in ${use.how}. Whoever calls '${w.circuit}' first decides what '${use.circuit}' accepts. Restrict who can write '${field}' (an owner check or a Merkle proof bound to the caller), or verify the value where it is used.`,
+    });
+  }
+  return out;
+}
+
 export function checkContract(program: Program): RawFinding[] {
   const ctx: Ctx = { ledger: new Set(), witnesses: new Set(), circuits: new Map(), enums: new Set() };
   collect(program.decls, ctx);
@@ -553,5 +618,6 @@ export function checkContract(program: Program): RawFinding[] {
     ...noEffect(program),
     ...fieldArithmetic(program),
     ...unusedLocals(program),
+    ...untrustedStateDependency(program, ctx),
   ];
 }

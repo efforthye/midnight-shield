@@ -268,6 +268,13 @@ export const RULES: RuleMeta[] = [
     summary: "The pragma asks for a Compact language version outside the range Midnight Shield is tested with, so new syntax may be misread.",
   },
   {
+    id: "MS034",
+    name: "untrusted-state-dependency",
+    severity: "high",
+    confidence: "medium",
+    summary: "A ledger field that any caller can set is trusted by another circuit in a check or a token transfer.",
+  },
+  {
     id: "MS101",
     name: "remote-proof-server",
     severity: "critical",
@@ -406,6 +413,13 @@ export const RULES: RuleMeta[] = [
     severity: "high",
     confidence: "medium",
     summary: "TypeScript/JavaScript: a secret is computed only from public values such as an address or a public key, so anyone can recompute it.",
+  },
+  {
+    id: "MS121",
+    name: "weak-witness-implementation",
+    severity: "critical",
+    confidence: "high",
+    summary: "Contract and DApp together: a witness the contract uses as commitment randomness or a secret key is implemented with zeros, a clock, Math.random() or a constant.",
   },
 ];
 

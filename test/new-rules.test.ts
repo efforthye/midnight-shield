@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { validateConfig, withPreset } from "../src/config.js";
 import { lintSource } from "../src/linter.js";
+import { lintFiles } from "../src/node.js";
 import { HEADER } from "./helpers.js";
 
 const ids = (src: string, file = "c.compact") => lintSource(src, file).map((f) => f.ruleId);
@@ -351,5 +356,79 @@ describe("DApp secrets tracked by where they come from", () => {
   it("does not treat values derived through other functions as secrets", () => {
     assert.ok(!has("const k = privateState.secretKey;\nconst pk = publicKeyOf(k);\nconsole.log(pk);", "MS102", "a.ts"));
     assert.ok(!has("const file = stateFileFor(env.networkId, seeds.masterSeed);\nlogger.warn(`no ${file}`);", "MS102", "a.ts"));
+  });
+});
+
+describe("MS034 untrusted-state-dependency", () => {
+  const H = `${HEADER}\nexport ledger price: Uint<128>;\nexport ledger debt: Uint<128>;\n`;
+  it("flags a value anyone can set that another circuit trusts", () => {
+    assert.ok(has(`${H}export circuit setPrice(p: Uint<128>): [] { price = disclose(p); }
+export circuit borrow(a: Uint<128>, c: Uint<128>): [] { assert(disclose(c) * price >= disclose(a), "low"); debt = disclose(a); }`, "MS034"));
+  });
+  it("is quiet when the writer checks the caller, when nothing relies on it, and for commit-reveal", () => {
+    assert.ok(!has(`${H}export ledger ownerId: Bytes<32>;\nwitness secretKey(): Bytes<32>;
+export circuit setPrice(p: Uint<128>): [] { assert(persistentHash<Bytes<32>>(secretKey()) == ownerId, "no"); price = disclose(p); }
+export circuit borrow(a: Uint<128>, c: Uint<128>): [] { assert(disclose(c) * price >= disclose(a), "low"); debt = disclose(a); }`, "MS034"));
+    assert.ok(!has(`${H}export circuit setPrice(p: Uint<128>): [] { price = disclose(p); }
+export circuit read(): Uint<128> { return price; }`, "MS034"));
+    assert.ok(!has(`${H}export ledger sealed: Bytes<32>;\nwitness salt(): Bytes<32>;
+export circuit bid(v: Uint<64>): [] { sealed = disclose(persistentCommit<Uint<64>>(v, salt())); }
+export circuit reveal(v: Uint<64>): [] { assert(disclose(persistentCommit<Uint<64>>(v, salt()) == sealed), "no"); }`, "MS034"));
+  });
+});
+
+describe("MS121 weak-witness-implementation (contract and DApp together)", () => {
+  const contract = `${HEADER}
+export ledger sealed: Bytes<32>;
+export ledger id: Bytes<32>;
+witness bidExtra(): Bytes<32>;
+witness localKey(): Bytes<32>;
+export circuit bid(v: Uint<64>): [] { sealed = disclose(persistentCommit<Uint<64>>(v, bidExtra())); }
+export circuit reg(): [] { id = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "a:id:"), localKey()])); }
+`;
+  const scan = (dapp: string) => {
+    const dir = mkdtempSync(join(tmpdir(), "ms121-"));
+    writeFileSync(join(dir, "c.compact"), contract);
+    writeFileSync(join(dir, "w.ts"), dapp);
+    return lintFiles([dir], {}, dir).filter((f) => f.ruleId === "MS121");
+  };
+  it("flags constant or clock implementations of witnesses the contract relies on, whatever their names", () => {
+    assert.equal(scan(`export const witnesses = {\n  localKey: ({ privateState }) => [privateState, fromHex("01")],\n};\n`).length, 1);
+    assert.equal(scan(`export const witnesses = {\n  bidExtra: (ctx) => [ctx.privateState, BigInt(Date.now())],\n};\n`).length, 1);
+  });
+  it("is quiet for random or stored values", () => {
+    assert.equal(scan(`export const witnesses = {\n  bidExtra: ({ privateState }) => [privateState, crypto.getRandomValues(new Uint8Array(32))],\n  localKey: ({ privateState }) => [privateState, privateState.secretKey],\n};\n`).length, 0);
+  });
+});
+
+describe("suppression reasons and presets", () => {
+  const src = `${HEADER}
+export ledger id: Bytes<32>;
+witness secretKey(): Bytes<32>;
+export circuit a(): [] {
+  // midnight-shield-disable-next-line MS005 -- legacy id format, migrating in v2
+  id = disclose(persistentHash<Bytes<32>>(secretKey()));
+}
+export circuit b(): [] {
+  // midnight-shield-disable-next-line MS005
+  id = disclose(persistentHash<Bytes<32>>(secretKey()));
+}
+`;
+  it("keeps the reason written after --", () => {
+    const f = lintSource(src, "c.compact", { includeSuppressed: true }).filter((x) => x.ruleId === "MS005");
+    assert.equal(f[0].suppressionReason, "legacy id format, migrating in v2");
+    assert.equal(f[1].suppressed, "inline");
+  });
+  it("with requireSuppressionReason, a comment without a reason does not hide the finding", () => {
+    const f = lintSource(src, "c.compact", { requireSuppressionReason: true }).filter((x) => x.ruleId === "MS005");
+    assert.equal(f.length, 1);
+    assert.match(f[0].snippet, /id = disclose/);
+    assert.ok(!f[0].suppressed);
+  });
+  it("presets fill in settings the config does not give", () => {
+    assert.equal(withPreset({ preset: "strict" }).requireSuppressionReason, true);
+    assert.equal(withPreset({ preset: "recommended" }).minConfidence, "medium");
+    assert.equal(withPreset({ preset: "recommended", minConfidence: "low" }).minConfidence, "low");
+    assert.throws(() => validateConfig({ preset: "loose" }));
   });
 });

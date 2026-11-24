@@ -26,6 +26,7 @@ export ledger choiceCommitment: Bytes<32>;
 export ledger round: Uint<32>;
 export ledger phase: Uint<8>;
 export ledger reserve: Field;
+export ledger price: Uint<64>;
 
 witness secretKey(): Bytes<32>;
 witness myChoice(): Uint<8>;
@@ -226,6 +227,15 @@ export circuit withdrawReserve(amount: Field): [] {
 export circuit audit(): [] {
   const expected = persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:audit:"), pad(32, "x")]);
   assert(round > 0, "no round");
+}
+
+// MS034: anyone can set the price, and borrowAgainst() trusts it.
+export circuit setPrice(p: Uint<64>): [] {
+  price = disclose(p);
+}
+
+export circuit borrowAgainst(collateral: Uint<64>, amount: Uint<64>): [] {
+  assert(disclose(collateral) * price >= disclose(amount), "undercollateralized");
 }
 
 // MS015: declared but never used.

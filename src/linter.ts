@@ -28,6 +28,8 @@ export interface Finding {
   fingerprint: string;
   /** set when the finding is hidden by an inline comment or a baseline */
   suppressed?: "inline" | "baseline";
+  /** the reason given in the suppression comment (`-- reason`) */
+  suppressionReason?: string;
   /** a safe automatic fix, when one exists */
   fix?: TextEdit;
   /** a suggested fix to review and apply by hand (see suggest.ts) */
@@ -51,6 +53,8 @@ export interface LintOptions {
   plugins?: CustomRule[];
   /** fingerprints of accepted findings (from a baseline file) */
   baseline?: Set<string>;
+  /** inline suppressions only count when they give a reason (`-- why`) */
+  requireSuppressionReason?: boolean;
   /** also return suppressed findings, marked with `suppressed` */
   includeSuppressed?: boolean;
   /** also check TypeScript/JavaScript files (MS101, MS102); default true */
@@ -62,16 +66,22 @@ const DIRECTIVE = /shield-disable(-next-line|-line|-file)?\b([^\n]*)/;
 interface Suppressions {
   file: Set<string> | "all" | undefined;
   lines: Map<number, Set<string> | "all">;
+  /** the reason written after `--`, by line (0 for the whole file) */
+  reasons: Map<number, string>;
 }
 
-function parseIds(rest: string): Set<string> | "all" {
-  const ids = rest.match(/\b[A-Z][A-Z0-9]*\d{3}\b/g);
-  return ids && ids.length ? new Set(ids) : "all";
+/** `MS005 MS003 -- the reason` → the IDs before `--` and the reason after it. */
+function parseDirective(rest: string): { ids: Set<string> | "all"; reason?: string } {
+  const at = rest.indexOf("--");
+  const head = at === -1 ? rest : rest.slice(0, at);
+  const reason = at === -1 ? undefined : rest.slice(at + 2).replace(/\*\/\s*$/, "").trim() || undefined;
+  const ids = head.match(/\b[A-Z][A-Z0-9]*\d{3}\b/g);
+  return { ids: ids && ids.length ? new Set(ids) : "all", reason };
 }
 
 function collectSuppressions(source: string): Suppressions {
   const { comments } = lex(source);
-  const out: Suppressions = { file: undefined, lines: new Map() };
+  const out: Suppressions = { file: undefined, lines: new Map(), reasons: new Map() };
   const addLine = (line: number, ids: Set<string> | "all") => {
     const prev = out.lines.get(line);
     if (prev === "all" || ids === "all") out.lines.set(line, "all");
@@ -80,17 +90,21 @@ function collectSuppressions(source: string): Suppressions {
   for (const c of comments) {
     const m = c.text.match(DIRECTIVE);
     if (!m) continue;
-    const ids = parseIds(m[2]);
+    const { ids, reason } = parseDirective(m[2]);
+    const line = m[1] === "-file" ? 0 : m[1] === "-next-line" ? c.endLine + 1 : c.line;
     if (m[1] === "-file") out.file = ids;
-    else if (m[1] === "-next-line") addLine(c.endLine + 1, ids);
-    else addLine(c.line, ids);
+    else addLine(line, ids);
+    if (reason) out.reasons.set(line, reason);
   }
   return out;
 }
 
-function isSuppressed(s: Suppressions, ruleId: string, line: number): boolean {
+/** Whether a comment suppresses this finding, and the reason it gives. */
+function suppression(s: Suppressions, ruleId: string, line: number): { reason?: string } | undefined {
   const match = (v: Set<string> | "all" | undefined) => v === "all" || (v instanceof Set && v.has(ruleId));
-  return match(s.file) || match(s.lines.get(line));
+  if (match(s.lines.get(line))) return { reason: s.reasons.get(line) };
+  if (match(s.file)) return { reason: s.reasons.get(0) };
+  return undefined;
 }
 
 /** Fingerprint = rule + file + the trimmed source line + occurrence index, so moving code up or down keeps it stable. */
@@ -146,6 +160,9 @@ function analyze(source: string, file: string, options: LintOptions): Analysis {
   const analyzer = new Analyzer(program, options.resolver, options.absolutePath);
   const raw = analyzer.run();
   raw.push(...checkAuthWrites(program), ...checkStructural(program), ...checkContract(program), ...bidiCharacters(source));
+  // an owner field anyone can overwrite is MS011's finding; MS034 would say the same thing
+  const ownerWrites = new Set(raw.filter((f) => f.ruleId === "MS011").map((f) => `${f.loc.line}:${f.loc.col}`));
+  for (let i = raw.length - 1; i >= 0; i--) if (raw[i].ruleId === "MS034" && ownerWrites.has(`${raw[i].loc.line}:${raw[i].loc.col}`)) raw.splice(i, 1);
   for (const rule of options.plugins ?? []) raw.push(...runCustomRule(rule, file, source, program));
   return { program, analyzer, raw };
 }
@@ -155,7 +172,7 @@ export function lintSource(source: string, file = "contract.compact", options: L
   return toFindings(raw, source, file, options);
 }
 
-function toFindings(raw: RawFinding[], source: string, file: string, options: LintOptions): Finding[] {
+export function toFindings(raw: RawFinding[], source: string, file: string, options: LintOptions): Finding[] {
   const lines = source.split(/\r?\n/);
   const suppressions = collectSuppressions(source);
   const disabled = new Set(options.disable ?? []);
@@ -190,7 +207,12 @@ function toFindings(raw: RawFinding[], source: string, file: string, options: Li
       if (f.ruleId === "MS006") finding.fix = pragmaFix(source);
       const suggestion = suggestFix(f.ruleId, f.message, snippet);
       if (suggestion) finding.suggestion = suggestion;
-      if (isSuppressed(suppressions, f.ruleId, f.loc.line)) finding.suppressed = "inline";
+      const inline = suppression(suppressions, f.ruleId, f.loc.line);
+      // with requireSuppressionReason, a comment without `-- reason` does not hide the finding
+      if (inline && (inline.reason || !options.requireSuppressionReason)) {
+        finding.suppressed = "inline";
+        if (inline.reason) finding.suppressionReason = inline.reason;
+      }
       else if (options.baseline?.has(finding.fingerprint)) finding.suppressed = "baseline";
       return finding;
     });
