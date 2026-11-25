@@ -36,6 +36,8 @@ export interface Finding {
   fix?: TextEdit;
   /** the engine's verdict behind the finding: value, where it goes, which checks it passes */
   evidence?: Evidence;
+  /** set when the attack was run in the Compact runtime and went through (midnight-shield --confirm / exploit) */
+  confirmed?: { detail: string; repro?: string };
   /** a suggested fix to review and apply by hand (see suggest.ts) */
   suggestion?: Suggestion;
 }

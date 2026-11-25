@@ -1,20 +1,20 @@
 // expect: MS002
-// source: a public scoring dApp (report pending)
+// source: a public dApp (report pending)
 // note: minimal reproduction. A Bytes<32> witness used as a number is added to a balance with no check. It is a score, not a secret, so MS007 must stay quiet.
 pragma language_version >= 0.28.0;
 import CompactStandardLibrary;
 
 export ledger totalbalance: Bytes<32>;
 export ledger balances: Map<Bytes<32>, Bytes<32>>;
-witness latestResult(): Bytes<32>;
+witness roundScore(): Bytes<32>;
 witness secretKey(): Bytes<32>;
 
-export circuit nextHole(): [] {
-  const player = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "gbc:pk:"), secretKey()]));
+export circuit addRound(): [] {
+  const player = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:pk:"), secretKey()]));
   if (!balances.member(player)) {
     balances.insert(player, 0 as Field as Bytes<32>);
   }
-  const toAdd = disclose(latestResult()) as Field;
+  const toAdd = disclose(roundScore()) as Field;
   balances.insert(player, (balances.lookup(player) as Field) + toAdd as Bytes<32>);
   totalbalance = ((totalbalance as Field) + toAdd) as Bytes<32>;
 }

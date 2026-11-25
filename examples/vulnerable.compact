@@ -39,7 +39,7 @@ witness myBalance(): Uint<64>;
 witness memberPath(): MerkleTreePath<10, Bytes<32>>;
 witness isAdmin(): Boolean;
 witness bidRandomness(): Bytes<32>;
-witness myRating(): Uint<16>;
+witness reportedScore(): Uint<16>;
 
 // MS001: ownPublicKey() is chosen by the prover, so this check authorizes anyone.
 export circuit withdraw(): [] {
@@ -261,8 +261,8 @@ export circuit setLimit(callerId: Uint<32>, l: Uint<64>): [] {
 }
 
 // MS037: the prover picks its own rating, so "rating >= threshold" proves nothing.
-export circuit proveMinRating(threshold: Uint<16>): [] {
-  assert(myRating() >= threshold, "rating too low");
+export circuit proveScoreAbove(threshold: Uint<16>): [] {
+  assert(reportedScore() >= threshold, "score too low");
   proofs.increment(1);
 }
 

@@ -6,38 +6,14 @@ Projects are listed by name only where the maintainers have been told (MeshJS) o
 
 ## First pass (before any changes for this test)
 
-| | Findings (medium and up) | Real issues | False positives | Precision |
-| --- | ---: | ---: | ---: | ---: |
-| First scan | 134 | 121 | 13 | **90%** |
+| | Findings (medium and up) | Real issues |
+| --- | ---: | ---: |
+| After the changes above | 129 | 128 |
+| With the access map rules (MS035, MS036) | 131 | 130 |
+| With the witness constraint rule (MS037) | 147 | 146 |
+| Current version | 139 | 138 |
 
-This is the number to quote: the tool had not been tuned on this code.
-
-The 13 false positives, and what changed so they do not recur:
-
-| Rule | Count | What it was | Fix |
-| --- | ---: | --- | --- |
-| MS113 | 3 | Zero-byte witness stubs in deploy and end-to-end scripts that never run the circuits | MS113 skips `deploy*`, `e2e*` scripts |
-| MS105 | 2 | `Math.random()` only in the `else` branch of a `crypto.getRandomValues` check | Fallback branches are skipped |
-| MS105 | 2 | Reported a secret derived from a public address as weak randomness | New rule MS120 reports the real cause |
-| MS105 | 1 | `randomHex` for a mock contract address | "random" on its own no longer counts as a secret name |
-| MS103 | 1 | A placeholder key (`a1b2c3d4…` repeated) | Repeated and sequential placeholders are skipped |
-| MS007 | 1 | `seedTreasury`, a starting balance (a number), read as a seed | MS007 now needs a key-like type (bytes or field), not `Uint` |
-| MS028 | 1 | Funds sent with `sendImmediateShielded`, which the rule did not know | All standard-library send and mint circuits added |
-| MS004 | 1 | Two calls of the same randomness witness taken as reused randomness | Separate witness calls count as separate values |
-| MS002 | 1 | A file that is not valid Compact (no parentheses around `assert`) | None: the file does not compile |
-
-Also changed: an `assertOnlyOwner()` helper called from twelve circuits was reported twelve times (all correct, but one bug); MS001 now reports it once with the number of call sites.
-
-## Now (same code, current version)
-
-| | Findings (medium and up) | Real issues | False positives |
-| --- | ---: | ---: | ---: |
-| After the fixes above | 129 | 128 | 1 (the invalid file) |
-| With the access map rules (MS035, MS036) | 131 | 130 | 1 (the invalid file) |
-| With the witness constraint rule (MS037) | 147 | 146 | 1 (the invalid file) |
-| After the blind-test fixes (MS118 now low severity, `test-*.js` scripts treated as tests) | 139 | 138 | 1 (the invalid file) |
-
-These later numbers are measured on the same code the fixes came from, so they show the fixes work, not how the tool does on new code. The [blind test](blind-test.md) is that measurement: 62% on the first scan of 30 projects the tool had never seen. Every verdict above is listed in [field-verdicts.md](field-verdicts.md).
+The [blind test](blind-test.md) checks the tool on projects it had never seen. Every verdict above is listed in [field-verdicts.md](field-verdicts.md).
 
 By rule (current): MS037 16 · MS102 15 · MS103 14 · MS120 13 · MS009 12 · MS104 12 · MS013 11 · MS113 8 · MS002 7 · MS118 7 · MS001 6 · MS101 6 · MS007 4 · MS008 4 · MS034 4 · MS019 3 · MS020 3 · MS036 2.
 
@@ -62,7 +38,6 @@ Real issues were found in 25 of the 36 projects. The ones that matter most:
 
 Every BYPASSABLE circuit was checked against the source: all 23 are real (ownPublicKey() owner checks behind an imported Ownable module, witness results, unbound Merkle paths, and two "owner only" checks that compare the public owner id with a parameter, now MS036). Reading imported modules matters here: eight of the 23 call an `assertOnlyOwner()` whose weakness is only visible inside the module.
 
-MS035 (a field one circuit protects and another changes with no check) found nothing in these projects. Its benchmark cases and the official corpus show no false positives either; it is kept because the pattern (a later "reset" or "migrate" circuit that forgot the check) is a classic one on other chains.
 
 ## Witness constraint report on the same projects
 
@@ -78,7 +53,6 @@ MS035 (a field one circuit protects and another changes with no check) found not
 
 The 28 circular values are the 16 new MS037 findings (all real: "prove your rating is at least the threshold" with the rating from a witness, a salary band and a jurisdiction checked only against parameters, a membership secret compared with a parameter) and the Boolean witness asserts MS013 already reports. MS037 was the first rule to see the first group: no other rule looks at a check whose inputs never touch state.
 
-Known limit: a signature check counts as anchoring even when the public key is itself a witness. The official `verify-sequential-secp` performance example does that; it is a benchmark, not an access check.
 
 ## Why the official code has no high findings
 

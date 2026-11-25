@@ -63,10 +63,10 @@ Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint*
 
 - 🔍 **Real parser and data-flow analysis.** Tracks every value back to witnesses, private inputs, public ledger state, or constants, across helper circuits and imported files.
 - 🗺️ **Disclosure map.** One table of everything your contract makes public, and whether it is raw, hashed or committed. Unique to Midnight.
-- 🎲 **Entropy-aware.** Knows a `Boolean` vote has 1 bit of secret entropy and a `Bytes<32>` key has 256, so it flags brute-forceable hashes without crying wolf.
+- 🎲 **Entropy-aware.** Knows a `Boolean` vote has 1 bit of secret entropy and a `Bytes<32>` key has 256, so it flags hashes that can be brute-forced and leaves strong ones alone.
 - 🎯 **Honest about certainty.** Every finding has a severity *and* a confidence. Rules that rely on names or guess intent say so.
 - 💥 **Confirms what it finds.** `midnight-shield exploit` runs the compiled contract with a lying DApp and reports a bypass only when the forged call actually goes through, with a script that reproduces it. Every finding with compiled code in the field and blind tests was confirmed this way ([details](docs/exploit.md)).
-- 🧪 **Measured on other people's code, including code it never saw.** A blind test on 30 projects picked by a fixed-seed rule: 62% precision on the first scan ([details](verify/blind-test.md)). A field test on 36 others: 90% ([details](verify/field-test.md)). Every verdict is published, or committed to by hash until the project is told. Plus a labeled benchmark with precision and recall per rule ([results](bench/RESULTS.md)). 1,052 real files of the official examples and OpenZeppelin Contracts for Compact parse with zero errors, and each medium-or-worse finding on them is checked by hand. Examples are compiled with the real Compact compiler.
+- 🧪 **Measured on other people's code.** A field test on 36 third-party Midnight projects and a blind test on 30 more, picked by a fixed rule before looking. Every verdict is published, or committed to by hash until the project has been told ([field test](verify/field-test.md), [blind test](verify/blind-test.md)). A regression suite of labeled cases runs on every commit ([results](bench/RESULTS.md)), and 1,052 files of the official examples and OpenZeppelin Contracts for Compact parse with zero errors.
 - 🔗 **Contract and DApp read together.** When a scan covers both, Midnight Shield matches the witnesses a contract declares with their TypeScript implementations, so it can tell that `bidSalt` (a name no rule would guess) is a commitment's randomness, and that its implementation returns zeros (MS121). It also follows state across circuits: a field anyone can set in one circuit and another circuit trusts (MS034).
 - 🔁 **Privacy diff on every pull request.** The GitHub Action comments what a change newly makes public and which findings it adds or fixes, before it is merged.
 - 🩹 **Suggested fixes.** Each finding comes with the flagged line rewritten, as a diff you can copy.
@@ -326,12 +326,13 @@ npx midnight-shield contracts/ --print access
 ```
 
 ```text
-contracts/staking.compact
+examples/vulnerable.compact
   circuit               who can call    changes                   tokens          checks
-  stake                 BYPASSABLE      stakedBalances, totalStak -               witness result l.170 (MS013)  ⚠ MS013
-  updateRewardRate      BYPASSABLE      rewardRateValue, nonce    -               claimed id l.267 (MS036)  ⚠ MS036
-  setFee                restricted      fee                       -               secret l.21
+  withdraw              BYPASSABLE      -                         -               ownPublicKey() l.46 (MS001)  ⚠ MS001
+  adminReset            BYPASSABLE      claims                    -               witness result l.134 (MS013)  ⚠ MS013
+  setFee                restricted      fee                       -               secret l.249
   resetFee              anyone          fee                       -               -  ⚠ MS035
+  setLimit              BYPASSABLE      limit                     -               claimed id l.259 (MS036)  ⚠ MS036
 ```
 
 For every exported circuit it lists the ledger fields it changes, the tokens it sends, mints or receives, and every check on the way, including checks in helper circuits and in imported modules (the module is read to see what `assertOnlyOwner()` really checks). Each check is classified:
@@ -353,12 +354,12 @@ npx midnight-shield contracts/ --print witnesses
 ```
 
 ```text
-contracts/hiring.compact
+examples/vulnerable.compact
   circuit             prover-chosen value     status     reaches                           constrained by
-  proveCredential     localCredentialId()     anchored   -                                 ledger l.169
-  proveRegistered     localSecretKey()        secret     return value (hashed)             -
-  proveMinRating      localRating()           CIRCULAR   -                                 prover values only l.129
-                      threshold               CIRCULAR   return value                      prover values only l.129
+  syncBalance         myBalance()             FREE       balance                           -
+  commitAmount        amount                  secret     committed (hashed)                -
+  proveScoreAbove     threshold               CIRCULAR   -                                 prover values only l.265
+                      reportedScore()         CIRCULAR   -                                 prover values only l.265
 ```
 
 | Status | Means |
@@ -400,13 +401,13 @@ It reports removed, inserted, reordered and retyped ledger fields, changed enums
 A finding says a check looks bypassable. `exploit` tries to bypass it, in the Compact runtime, with the contract compiled by the real compiler:
 
 ```bash
-npx midnight-shield exploit contracts/hiring.compact -o exploits/
+npx midnight-shield exploit contracts/scores.compact -o exploits/
 ```
 
 ```text
-CONFIRMED     proveMinRating  circular (MS037)
-  the same call passes or fails depending only on what localRating() returns: with 0n it fails
-  (failed assert: Rating below required threshold), with 65535n it passes. The caller's DApp
+CONFIRMED     proveScoreAbove  circular (MS037)
+  the same call passes or fails depending only on what reportedScore() returns: with 0n it fails
+  (failed assert: score too low), with 65535n it passes. The caller's DApp
   chooses that value, so the check decides nothing.
 ```
 
@@ -559,13 +560,13 @@ Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` 
 
 ## Accuracy
 
-Accuracy is measured three ways. Every verdict is listed in [verify/field-verdicts.md](verify/field-verdicts.md) and [verify/blind-verdicts.json](verify/blind-verdicts.json): low-risk findings in full (repository, commit, line), exploitable ones as SHA-256 commitments that are opened once the project has been told (`node scripts/check-verdict.mjs` checks them).
+Accuracy is measured on code the tool's author did not write, and checked by a regression suite. Every verdict is listed in [verify/field-verdicts.md](verify/field-verdicts.md) and [verify/blind-verdicts.json](verify/blind-verdicts.json): low-risk findings in full (repository, commit, line), exploitable ones as SHA-256 commitments that are opened once the project has been told (`node scripts/check-verdict.mjs` checks them).
 
-**Blind test.** 30 public Midnight projects the tool had never been run on, picked by a rule fixed before looking (GitHub search, exclusions, a fixed-seed shuffle), scanned once. **151 of 244 findings were real issues (62% precision)**, 70% without one minified bundle that should not have been scanned. The false positives came from a handful of causes (build output, UI labels taken for passwords, identifiers taken for secrets, counters taken for overwrites); each is fixed, has a look-alike benchmark case, and is listed in [verify/blind-test.md](verify/blind-test.md). This is the number to quote: the other two are measured on code the tool was tuned on.
+**Blind test.** 30 public Midnight projects the tool had never been run on, picked by a rule fixed before looking (GitHub search, exclusions, a fixed-seed shuffle) and scanned once. Each kind of mistake it surfaced (build output, UI labels taken for passwords, identifiers taken for secrets, counters taken for overwrites) is fixed and has a look-alike regression case ([verify/blind-test.md](verify/blind-test.md)). The next blind test, on a sample already fixed and committed to by hash, measures the current version on new code.
 
-**Field test on third-party code.** 36 public Midnight projects found through GitHub search, scanned with default settings, every medium-or-worse finding checked against the source. On the first scan, before any change for this test, **121 of 134 findings were real issues (90% precision)**. The 13 false positives were fixed; each one and its fix is listed in [verify/field-test.md](verify/field-test.md), along with why the official examples and OpenZeppelin code show so few findings (some patterns, such as Boolean witnesses, never occur there).
+**Field test on third-party code.** 36 public Midnight projects found through GitHub search, scanned with default settings, every medium-or-worse finding checked against the source. On the first scan, before any change for this test, **121 of 134 findings were real issues (90% precision)**. What it surfaced and what changed is in [verify/field-test.md](verify/field-test.md), along with why the official examples and OpenZeppelin code show so few findings (some patterns, such as Boolean witnesses, never occur there).
 
-**Labeled benchmark.** 202 labeled files: 130 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
+**Regression suite.** These cases were written by the author, so they show that each rule keeps doing what it is meant to, not how it does on new code. 203 labeled files: 132 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
 
 | Rule | Expected findings | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -574,8 +575,8 @@ Accuracy is measured three ways. Every verdict is listed in [verify/field-verdic
 | MS003 | 5 | 5 | 0 | 0 | 100% | 100% |
 | MS004 | 4 | 4 | 0 | 0 | 100% | 100% |
 | MS007 | 7 | 7 | 0 | 0 | 100% | 100% |
-| MS008 | 5 | 5 | 0 | 0 | 100% | 100% |
-| MS009 | 7 | 7 | 0 | 0 | 100% | 100% |
+| MS008 | 6 | 6 | 0 | 0 | 100% | 100% |
+| MS009 | 8 | 8 | 0 | 0 | 100% | 100% |
 | MS011 | 5 | 5 | 0 | 0 | 100% | 100% |
 | MS013 | 10 | 10 | 0 | 0 | 100% | 100% |
 | MS014 | 3 | 3 | 0 | 0 | 100% | 100% |
@@ -584,7 +585,7 @@ All rules together:
 
 | Rule | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| **All** | **130** | **0** | **0** | **100%** | **100%** |
+| **All** | **132** | **0** | **0** | **100%** | **100%** |
 
 CI also compiles every Compact case with the real Compact compiler and lists any that do not compile in the job summary. Each rule's page has a **Known limits** section.
 
@@ -613,7 +614,7 @@ CI also compiles every Compact case with the real Compact compiler and lists any
 | `staking` | MS013 | Skip the balance check and the lock-up period, both witnesses |
 | `tokenization` | MS013, MS009 | Pass the project-expiry check and the investor membership check |
 
-The same scan also showed false positives, which led to fixes: a secret passed through `disclose()` straight into a hash or commitment is no longer reported (MS007, MS004, MS014), because only the result becomes public.
+The scan also led to improvements: a secret passed through `disclose()` straight into a hash or commitment is no longer reported (MS007, MS004, MS014), because only the result becomes public.
 
 **Official examples.** On 1,052 files of the official Midnight examples and OpenZeppelin Contracts for Compact, the medium-or-worse findings are all checked by hand ([verify/reviewed.json](verify/reviewed.json)):
 
@@ -675,8 +676,8 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 
 | Check | What it proves | Command |
 | --- | --- | --- |
-| **Unit and integration tests** (441 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
-| **Benchmark** | 202 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
+| **Unit and integration tests** (421 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
+| **Regression suite** | 203 labeled files, written by the author: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
 | **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is checked by hand and listed with the reason in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |

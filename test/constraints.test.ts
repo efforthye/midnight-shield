@@ -109,15 +109,15 @@ export circuit go(a: Uint<16>): [] { assert(ok(a), "no"); n.increment(1); }`);
 describe("rules agree with the engine", () => {
   it("a Bytes<32> witness used as a number is a FREE value (MS002), not a secret (MS007)", () => {
     const src = `export ledger total: Bytes<32>;
-witness latestResult(): Bytes<32>;
+witness roundScore(): Bytes<32>;
 export circuit add(): [] {
-  const x = disclose(latestResult()) as Field;
+  const x = disclose(roundScore()) as Field;
   total = ((total as Field) + x) as Bytes<32>;
 }`;
     const found = lintSource(HEADER + src, "c.compact");
     assert.deepEqual(found.map((f) => f.ruleId), ["MS002"]);
     assert.match(found[0].message, /goes into 'total' of 'add'/);
-    assert.deepEqual(found[0].evidence, { circuit: "add", value: "latestResult()", reaches: ["total"], checks: [], verdict: "FREE" });
+    assert.deepEqual(found[0].evidence, { circuit: "add", value: "roundScore()", reaches: ["total"], checks: [], verdict: "FREE" });
   });
   it("a neutral Bytes<32> witness the contract also hashes is key material, and says why", () => {
     const src = `export ledger ids: Set<Bytes<32>>;

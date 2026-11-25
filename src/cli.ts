@@ -11,7 +11,7 @@ import { PluginError, type CustomRule } from "./plugins.js";
 import { VERSION, formatAccess, formatAccessMarkdown, formatConstraints, formatConstraintsMarkdown, formatDisclosures, formatDisclosuresMarkdown, formatJson, formatMarkdown, formatSarif, formatText } from "./reporters.js";
 import { badgeJson } from "./badge.js";
 import { compareContracts, formatUpgradeMarkdown, formatUpgradeText, type FileUpgrade } from "./upgrade.js";
-import { findCompiledDir, formatExploitText, runExploits, type ExploitResult } from "./exploit.js";
+import { confirmFindings, findCompiledDir, formatExploitText, runExploits, type ExploitResult } from "./exploit.js";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { createSnapshot, diffIsEmpty, diffSnapshots, formatDiffMarkdown, formatDiffText, readSnapshot } from "./privacy-diff.js";
@@ -44,6 +44,10 @@ Output:
   -o, --output <file>                      Write the report to a file
       --print disclosures                  Print the disclosure map: every point where
                                            data becomes public, and what flows there
+      --confirm                            Run the attack for each finding that can be
+                                           attacked (needs compact compile output and
+                                           @midnight-ntwrk/compact-runtime); confirmed ones
+                                           become high or critical
       --print access                       Print the access map: who can call each
                                            exported circuit, what it checks, what it
                                            changes and which tokens it moves
@@ -147,6 +151,32 @@ function diffCommand(paths: string[], format: string, output: string | undefined
   if (level !== "none" && diff.newFindings.some((f) => SEVERITY_ORDER.indexOf(f.severity) <= SEVERITY_ORDER.indexOf(level))) process.exitCode = 1;
 }
 
+/**
+ * --confirm: for each contract with an attackable finding and a compiled build next to it,
+ * run the attack; findings it confirms are raised to high or critical and say what happened.
+ */
+async function confirmAll(findings: Finding[], runtimeDir: string | undefined): Promise<void> {
+  const ATTACKABLE = new Set(["MS001", "MS002", "MS009", "MS013", "MS036", "MS037"]);
+  const byFile = new Map<string, Finding[]>();
+  for (const f of findings) if (ATTACKABLE.has(f.ruleId) && f.file.endsWith(".compact") && f.evidence) byFile.set(f.file, [...(byFile.get(f.file) ?? []), f]);
+  let confirmed = 0;
+  for (const [file, list] of byFile) {
+    const abs = resolve(file);
+    const compiled = findCompiledDir(abs);
+    if (!compiled) {
+      process.stderr.write(`midnight-shield: --confirm: no compiled contract next to ${file} (run compact compile first); not attacked.\n`);
+      continue;
+    }
+    try {
+      const results = await confirmFindings(list, readFileSync(abs, "utf8"), { compiledDir: compiled, runtimeFrom: runtimeDir ?? dirname(abs), file: abs, resolver: fileImportResolver() });
+      confirmed += results.filter((r) => r.status === "confirmed").length;
+    } catch (e) {
+      process.stderr.write(`midnight-shield: --confirm: ${file}: ${(e as Error).message}\n`);
+    }
+  }
+  if (byFile.size) process.stderr.write(`midnight-shield: --confirm: ${confirmed} finding(s) confirmed by running the attack in the Compact runtime.\n`);
+}
+
 async function exploitCommand(paths: string[], format: string, output: string | undefined, compiledDir: string | undefined, runtimeDir: string | undefined, color: boolean): Promise<void> {
   if (paths.length !== 1 || !paths[0].endsWith(".compact")) fail("exploit needs one contract: midnight-shield exploit contracts/my.compact [--compiled dir]");
   const file = resolve(paths[0]);
@@ -215,6 +245,7 @@ async function main(argv: string[]): Promise<void> {
   const paths: string[] = [];
   let format = "text";
   let compiledDir: string | undefined;
+  let confirm = false;
   let runtimeDir: string | undefined;
   let output: string | undefined;
   let configPath: string | undefined;
@@ -337,6 +368,9 @@ async function main(argv: string[]): Promise<void> {
       case "--no-code-frame":
         codeFrame = false;
         break;
+      case "--confirm":
+        confirm = true;
+        break;
       case "--compiled":
         compiledDir = value();
         break;
@@ -438,6 +472,7 @@ async function main(argv: string[]): Promise<void> {
       return;
     }
     findings = lintFiles(paths, options);
+    if (confirm) await confirmAll(findings, runtimeDir);
   } catch (e) {
     fail((e as Error).message);
   }

@@ -6,7 +6,7 @@ import CompactStandardLibrary;
 export ledger ratings: Map<Bytes<32>, Uint<16>>;
 export ledger proofs: Counter;
 witness myId(): Bytes<32>;
-export circuit proveMinRating(threshold: Uint<16>): [] {
-  assert(ratings.lookup(disclose(myId())) >= threshold, "rating too low");
+export circuit proveScoreAbove(threshold: Uint<16>): [] {
+  assert(ratings.lookup(disclose(myId())) >= threshold, "score too low");
   proofs.increment(1);
 }

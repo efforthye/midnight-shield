@@ -22,6 +22,17 @@ for (const name of ["field-verdicts.json", "blind-verdicts.json"]) {
       console.log(`${name}: does not match any commitment: ${r.row.repo} ${r.row.file}:${r.row.line} ${r.row.rule}`);
     }
   }
+  // The project lists (this sample and the next one) are committed the same way: { row: [...repos], salt }.
+  for (const key of ["projects", "nextSample"]) {
+    const r = data[`${key}Revealed`];
+    if (!r || !data[`${key}Commitment`]) continue;
+    const h = createHash("sha256").update(`${JSON.stringify(r.row)}|${r.salt}`).digest("hex");
+    if (h === data[`${key}Commitment`]) console.log(`${name}: ${key} list revealed and matching.`);
+    else {
+      failed++;
+      console.log(`${name}: the revealed ${key} list does not match its commitment.`);
+    }
+  }
   console.log(`${name}: ${data.public.length} published, ${data.withheld.length} withheld, ${ok} revealed and matching.`);
 }
 process.exitCode = failed ? 1 : 0;

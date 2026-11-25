@@ -1,0 +1,33 @@
+// expect: MS009, MS008
+// note: any member path passes: the attack registers a member, opens voting, and votes with that path from another account
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger organizer: Bytes<32>;
+export ledger voters: MerkleTree<10, Bytes<32>>;
+export ledger open: Boolean;
+export ledger yes: Counter;
+witness organizerSecret(): Bytes<32>;
+witness voterSecret(): Bytes<32>;
+witness membershipPath(leaf: Bytes<32>): MerkleTreePath<10, Bytes<32>>;
+circuit organizerId(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:org:"), sk]);
+}
+constructor(authority: Bytes<32>) {
+  organizer = disclose(authority);
+}
+export circuit register(commitment: Bytes<32>): [] {
+  assert(organizerId(organizerSecret()) == organizer, "organizer only");
+  voters.insert(disclose(commitment));
+}
+export circuit openVoting(): [] {
+  assert(organizerId(organizerSecret()) == organizer, "organizer only");
+  open = true;
+}
+export circuit vote(): [] {
+  assert(open, "voting is closed");
+  const leaf = persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:voter:"), voterSecret()]);
+  const path = membershipPath(leaf);
+  assert(voters.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not on the roll");
+  yes.increment(1);
+}

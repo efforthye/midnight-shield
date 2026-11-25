@@ -4,9 +4,9 @@ pragma language_version >= 0.28.0;
 import CompactStandardLibrary;
 
 export ledger proofs: Counter;
-witness localRating(): Uint<16>;
-export circuit proveMinRating(threshold: Uint<16>): [] {
-  const r = localRating();
-  assert(r >= threshold, "rating too low");
+witness reportedScore(): Uint<16>;
+export circuit proveScoreAbove(threshold: Uint<16>): [] {
+  const r = reportedScore();
+  assert(r >= threshold, "score too low");
   proofs.increment(1);
 }

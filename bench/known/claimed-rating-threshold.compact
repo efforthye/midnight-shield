@@ -1,16 +1,16 @@
 // expect: MS037
-// source: a public hiring dApp (report pending)
+// source: a public dApp (report pending)
 // note: minimal reproduction. "Prove your rating is at least the threshold", where the rating comes from a witness and the threshold is a parameter.
 pragma language_version >= 0.28.0;
 import CompactStandardLibrary;
 
 export ledger ratingSum: Counter;
 export ledger sequence: Counter;
-witness localRating(): Uint<16>;
+witness reportedScore(): Uint<16>;
 
-export circuit proveMinRating(threshold: Uint<16>): Uint<16> {
-  const myRating = localRating();
-  assert(myRating >= threshold, "Rating below required threshold");
+export circuit proveScoreAbove(threshold: Uint<16>): Uint<16> {
+  const reportedScore = reportedScore();
+  assert(reportedScore >= threshold, "score too low");
   sequence.increment(1);
   return disclose(threshold);
 }
