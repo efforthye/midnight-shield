@@ -337,6 +337,18 @@ export function suggestFix(ruleId: string, message: string, line: string): Sugge
         note: "A check between prover-chosen values only proves the prover can do arithmetic. Anchor at least one side in ledger state, a constant, or a commitment the prover opens in the circuit.",
       };
     }
+    case "MS038": {
+      return {
+        before,
+        after: [
+          `${ind}// bind the secret first: a membership proof over a registered key, or an owner check`,
+          `${ind}assert(path.leaf == memberKey(secret), "path is not for this member");`,
+          `${ind}assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not eligible");`,
+          line,
+        ],
+        note: "A nullifier only stops repeats when its secret is fixed: tied to a registered member, an owner id, or a claimed record. Otherwise every fresh secret is a fresh nullifier.",
+      };
+    }
     case "MS101": {
       const after = line.replace(/(["'])(?:https?|wss?):\/\/[^"']*\1/, 'process.env.MIDNIGHT_PROOF_SERVER ?? "http://localhost:6300"');
       return after === line ? undefined : { before, after: [after], note: "Run the proof server on the user's own machine." };

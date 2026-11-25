@@ -10,7 +10,7 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 [![CI](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
-![Rules](https://img.shields.io/badge/rules-58-purple)
+![Rules](https://img.shields.io/badge/rules-59-purple)
 ![Tests](https://img.shields.io/badge/tests-367%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
@@ -274,6 +274,7 @@ npx midnight-shield contracts/ --format json                    # scripts and AI
 | [MS035](docs/rules/MS035.md) | `inconsistent-guard` | 🔴 High | medium | One circuit checks the caller before changing a field, another overwrites the same field with no check |
 | [MS036](docs/rules/MS036.md) | `claimed-identity` | 🟣 Critical | medium | An "owner check" compares a stored id with a parameter; the ledger is public, so anyone can pass the stored id |
 | [MS037](docs/rules/MS037.md) | `self-satisfiable-check` | 🔴 High | medium | An assert compares only values the prover chooses (witness results, parameters), so it can always be made to pass |
+| [MS038](docs/rules/MS038.md) | `free-nullifier` | 🔴 High | medium | A nullifier is built from a witness that no membership proof or owner check pins down, so a fresh secret repeats a once-only action (the Aztec 2.0 / StealthDrop bug class) |
 
 **DApp code (TypeScript / JavaScript)**
 
@@ -566,7 +567,7 @@ Accuracy is measured on code the tool's author did not write, and checked by a r
 
 **Field test on third-party code.** 36 public Midnight projects found through GitHub search, scanned with default settings, every medium-or-worse finding checked against the source. On the first scan, before any change for this test, **121 of 134 findings were real issues (90% precision)**. What it surfaced and what changed is in [verify/field-test.md](verify/field-test.md), along with why the official examples and OpenZeppelin code show so few findings (some patterns, such as Boolean witnesses, never occur there).
 
-**Regression suite.** These cases were written by the author, so they show that each rule keeps doing what it is meant to, not how it does on new code. 232 labeled files: 150 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
+**Regression suite.** These cases were written by the author, so they show that each rule keeps doing what it is meant to, not how it does on new code. 241 labeled files: 157 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
 
 | Rule | Expected findings | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -677,7 +678,7 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 | Check | What it proves | Command |
 | --- | --- | --- |
 | **Unit and integration tests** (421 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
-| **Regression suite** | 232 labeled files, written by the author: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
+| **Regression suite** | 241 labeled files, written by the author: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
 | **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is checked by hand and listed with the reason in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |

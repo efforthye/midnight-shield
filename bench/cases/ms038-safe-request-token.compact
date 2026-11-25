@@ -1,0 +1,18 @@
+// expect: none
+// note: a per-request token of an authorized agent: one request id cannot be replayed, new requests are allowed
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger agents: Set<Bytes<32>>;
+export ledger spentRequests: Map<Bytes<32>, Boolean>;
+export ledger n: Counter;
+witness agentSecret(): Bytes<32>;
+witness requestId(): Bytes<32>;
+export circuit exercise(): [] {
+  const sk = agentSecret();
+  assert(agents.member(disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "o:agent:"), sk]))), "not an agent");
+  const nf = persistentHash<Vector<3, Bytes<32>>>([pad(32, "o:req:"), sk, requestId()]);
+  assert(!spentRequests.member(disclose(nf)), "request already processed");
+  spentRequests.insert(disclose(nf), true);
+  n.increment(1);
+}

@@ -1,0 +1,14 @@
+// expect: MS038
+// note: the nullifier itself comes from a witness
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger spent: Map<Bytes<32>, Boolean>;
+export ledger total: Counter;
+witness myNullifier(): Bytes<32>;
+export circuit act(): [] {
+  const nf = myNullifier();
+  assert(!spent.member(disclose(nf)), "already acted");
+  spent.insert(disclose(nf), true);
+  total.increment(1);
+}

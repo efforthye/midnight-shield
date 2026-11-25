@@ -296,6 +296,13 @@ export const RULES: RuleMeta[] = [
     summary: "An assert compares only values the prover chooses (witness results and parameters) with each other, so the prover can always make it pass.",
   },
   {
+    id: "MS038",
+    name: "free-nullifier",
+    severity: "high",
+    confidence: "medium",
+    summary: "A nullifier is built from a witness that no membership proof or owner check pins down, so the prover can make a fresh nullifier and repeat a once-only action.",
+  },
+  {
     id: "MS101",
     name: "remote-proof-server",
     severity: "critical",

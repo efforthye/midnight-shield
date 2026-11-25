@@ -1,4 +1,4 @@
-import { checkSelfSatisfiable, constraintMap, witnessRoles, type CircuitConstraints } from "./constraints.js";
+import { checkFreeNullifiers, checkSelfSatisfiable, constraintMap, witnessRoles, type CircuitConstraints } from "./constraints.js";
 import { accessMap, checkClaimedIdentity, checkInconsistentGuards, type CircuitAccess } from "./access.js";
 import { Analyzer, type DisclosureEvent, type Evidence, type ImportResolver, type RawFinding } from "./analyzer.js";
 import type { Program } from "./ast.js";
@@ -262,6 +262,7 @@ function analyze(source: string, file: string, options: LintOptions): Analysis {
   // MS013 already reports an assert on a witness's Boolean
   const witnessAsserts = new Set(raw.filter((f) => f.ruleId === "MS013").map((f) => f.loc.line));
   raw.push(...checkSelfSatisfiable(program).filter((f) => !witnessAsserts.has(f.loc.line)));
+  raw.push(...checkFreeNullifiers(program));
   raw.push(...checkInconsistentGuards(program, raw, imports).filter((f) => !reportedWrites.has(f.loc.line)));
   explainAccess(program, raw, imports);
   explainWithEngine(program, raw);

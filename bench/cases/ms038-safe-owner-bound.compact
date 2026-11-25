@@ -1,0 +1,17 @@
+// expect: none
+// note: the secret is the owner's, checked against the ledger
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger ownerId: Bytes<32>;
+export ledger used: Set<Bytes<32>>;
+export ledger n: Counter;
+witness ownerSecret(): Bytes<32>;
+export circuit act(round: Bytes<32>): [] {
+  const sk = ownerSecret();
+  assert(persistentHash<Vector<2, Bytes<32>>>([pad(32, "n:owner:"), sk]) == ownerId, "not the owner");
+  const nul = persistentHash<Vector<3, Bytes<32>>>([pad(32, "n:nul:"), sk, round]);
+  assert(!used.member(disclose(nul)), "already done this round");
+  used.insert(disclose(nul));
+  n.increment(1);
+}

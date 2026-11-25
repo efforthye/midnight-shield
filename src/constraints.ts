@@ -71,6 +71,8 @@ export interface CircuitConstraints {
   inputs: InputReport[];
   /** asserts that only compare prover-chosen values with each other */
   selfSatisfiable: { line: number; col: number; inputs: string[] }[];
+  /** nullifier checks whose value the prover can vary: witnesses tied to nothing else (MS038) */
+  freeNullifiers: { line: number; col: number; set: string; inputs: string[] }[];
 }
 
 interface Check {
@@ -80,6 +82,11 @@ interface Check {
   relational: boolean;
   membership: boolean;
   isIf: boolean;
+  /** the two sides of each `==` in the condition (split at &&) */
+  equalities: [Leaves, Leaves][];
+  message?: string;
+  /** `!set.member(x)`: the set and what x is built from */
+  notMember?: { set: string; leaves: Leaves };
 }
 
 interface Sink {
@@ -113,6 +120,11 @@ class ConstraintScanner {
   readonly quantity = new Set<string>();
   readonly hashedSeen = new Set<string>();
   readonly keyedSeen = new Set<string>();
+  private budget = 0;
+  /** ledger sets or maps that only record that a value was used (nullifier sets) */
+  readonly usedMarks = new Set<string>();
+  /** set.insert(x) / tree.insert(x): one value added to a set or tree */
+  readonly singleInserts: { field: string; leaves: Leaves }[] = [];
 
   constructor(
     private ctx: Ctx,
@@ -128,7 +140,10 @@ class ConstraintScanner {
   }
 
   leaves(e: Expr, env: Env, out = empty(), depth = 0): Leaves {
-    if (depth > 12) return out;
+    // deep enough for a leaf built through several helpers and locals (MerkleTreePath { leaf: leafOf(org, commitOf(sk)) })
+    // and a budget per top-level call: shared locals and helpers are walked once per use, which can blow up
+    if (depth === 0) this.budget = 20000;
+    if (depth > 48 || --this.budget < 0) return out;
     switch (e.kind) {
       case "number":
       case "string":
@@ -228,7 +243,7 @@ class ConstraintScanner {
         if (e.kind !== "call") continue;
         const name = calleeIdent(e);
         if (name === "assert" && e.args[0]) {
-          out.checks.push(this.check(e.args[0], local, e.loc.line, false, e.loc.col));
+          out.checks.push({ ...this.check(e.args[0], local, e.loc.line, false, e.loc.col), message: e.args[1]?.kind === "string" ? e.args[1].value : "" });
           continue;
         }
         if (TOKEN_OPS.has(name)) {
@@ -244,6 +259,9 @@ class ConstraintScanner {
           if (f && !LEDGER_READS.has(e.callee.property)) {
             // the first argument of insert/remove on a map or set picks the entry
             if (["insert", "remove", "insertDefault"].includes(e.callee.property) && e.args[0]) for (const w of this.leaves(e.args[0], local).open) if (w.endsWith("()")) this.keyedSeen.add(w);
+            // set.insert(n) or flags.insert(n, true): a record that n was used, with nothing else stored
+            if (e.callee.property === "insert" && e.args.length === 1) this.singleInserts.push({ field: f, leaves: this.leaves(e.args[0], local) });
+            if (e.callee.property === "insert" && (e.args.length === 1 || (e.args.length === 2 && this.leaves(e.args[1], local).constant && !unknowns(this.leaves(e.args[1], local)).length && !this.leaves(e.args[1], local).ledger.size))) this.usedMarks.add(f);
             out.sinks.push({ label: f, leaves: e.args.map((a) => this.leaves(a, local)).reduce(merge, empty()) });
           }
           continue;
@@ -256,7 +274,23 @@ class ConstraintScanner {
 
   private check(cond: Expr, env: Env, line: number, isIf: boolean, col = 1): Check {
     const leaves = this.leaves(cond, env);
-    return { line, col, leaves, relational: leaves.relational, membership: leaves.membership, isIf };
+    const strip = (e: Expr): Expr => (e.kind === "call" && calleeIdent(e) === "disclose" && e.args[0] ? strip(e.args[0]) : e);
+    const equalities: [Leaves, Leaves][] = [];
+    const parts = (e: Expr): Expr[] => {
+      const x = strip(e);
+      return x.kind === "binary" && x.op === "&&" ? [...parts(x.left), ...parts(x.right)] : [x];
+    };
+    let notMember: Check["notMember"];
+    for (const p of parts(cond)) {
+      if (p.kind === "binary" && p.op === "==") equalities.push([this.leaves(p.left, env), this.leaves(p.right, env)]);
+      // !set.member(x), or set.member(x) == false
+      const neg = p.kind === "unary" && p.op === "!" ? strip(p.arg) : p.kind === "binary" && p.op === "==" && p.right.kind === "ident" && p.right.name === "false" ? strip(p.left) : undefined;
+      if (neg && neg.kind === "call" && neg.callee.kind === "member" && neg.callee.property === "member" && neg.args[0]) {
+        const set = this.rootField(neg.callee.object);
+        if (set) notMember = { set, leaves: this.leaves(neg.args[0], env) };
+      }
+    }
+    return { line, col, leaves, relational: leaves.relational, membership: leaves.membership, isIf, equalities, notMember };
   }
 }
 
@@ -417,7 +451,86 @@ export function constraintMap(program: Program, roles?: Map<string, WitnessRole>
       if (!k.leaves.witnesses.size || u.length < 2 || u.some((n) => anchored.has(n)) || !effects) continue;
       selfSatisfiable.push({ line: k.line, col: k.col, inputs: u });
     }
-    out.push({ name: c.name, line: c.loc.line, module: inModule.has(c.name), inputs, selfSatisfiable });
+    // MS038: a nullifier (assert(!used.member(n)); used.insert(n)) built from a witness that nothing pins down.
+    // A value is pinned when a membership check covers it, or an equality ties it to the ledger or a
+    // constant, or to values that are themselves pinned (path.leaf == key(sk) with the path in the tree).
+    const freeNullifiers: CircuitConstraints["freeNullifiers"] = [];
+    const candidates: { nk: Check; free: string[]; sound: boolean }[] = [];
+    for (const nk of found.checks) {
+      if (!nk.notMember || nk.isIf || !found.sinks.some((sk) => sk.label === nk.notMember!.set)) continue;
+      // signing up a new account is open to every new secret on purpose ("user already registered")
+      if (/regist|enrol|sign_?up|onboard|join|create_?account|open_?account/i.test(c.name) || /already (registered|enrolled|exists|signed up|joined)/i.test(nk.message ?? "")) continue;
+      // an action paid for with a coin (a bet, a deposit) may be repeated by anyone willing to pay again
+      if (found.coins.length) continue;
+      // the nullifier has to guard something besides itself
+      if (!found.sinks.some((sk) => sk.label !== nk.notMember!.set && sk.label !== "return value")) continue;
+      const others = found.checks.filter((k) => k !== nk && !k.isIf);
+      const pinned = new Set<string>();
+      for (const k of others) if (k.membership) for (const n of unknowns(k.leaves)) pinned.add(n);
+      for (let changed = true; changed; ) {
+        changed = false;
+        for (const k of others) {
+          for (const [a, b] of k.equalities) {
+            for (const [x, y] of [[a, b], [b, a]] as const) {
+              const ux = unknowns(x);
+              if ((ux.length === 0 && (x.ledger.size || x.constant)) || (ux.length > 0 && ux.every((n) => pinned.has(n)))) {
+                for (const n of unknowns(y)) if (!pinned.has(n)) {
+                  pinned.add(n);
+                  changed = true;
+                }
+              }
+            }
+          }
+        }
+      }
+      // the nullifier's inputs, and the values tied to them by an equality (publicNullifier == hash(sk, root))
+      const linked = new Set(unknowns(nk.notMember.leaves));
+      for (let changed = true; changed; ) {
+        changed = false;
+        for (const k of others) for (const [a, b] of k.equalities) {
+          const ua = unknowns(a), ub = unknowns(b);
+          if (ua.some((n) => linked.has(n)) || ub.some((n) => linked.has(n))) for (const n of [...ua, ...ub]) if (!linked.has(n)) {
+            linked.add(n);
+            changed = true;
+          }
+        }
+      }
+      const free = [...linked].filter((n) => n.endsWith("()") && !pinned.has(n));
+      // a nullifier that mixes a pinned secret with a free request id (requestNullifier(sk, rid)) is a
+      // per-request token on purpose; only one where nothing at all is pinned lets anyone start over
+      const linkedWitnesses = [...linked].filter((n) => n.endsWith("()"));
+      const nothingPinned = !linkedWitnesses.some((n) => pinned.has(n));
+      // flags only checks on a set that just records use; a key registry (the same value also added
+      // to another set or tree, registerKey(): one entry per new key) is open to new values on purpose
+      const mine = unknowns(nk.notMember.leaves);
+      const registry = scanner.singleInserts.some((x) => x.field !== nk.notMember!.set && mine.length > 0 && mine.every((n) => unknowns(x.leaves).includes(n)));
+      candidates.push({ nk, free: scanner.usedMarks.has(nk.notMember.set) && !registry && nothingPinned ? free : [], sound: linkedWitnesses.length > 0 && linkedWitnesses.every((n) => pinned.has(n)) });
+    }
+    // another once-only check in the same circuit whose value is pinned (a payroll row claimed once)
+    // already stops the repeat
+    if (!candidates.some((x) => x.sound)) for (const { nk, free } of candidates) if (free.length) freeNullifiers.push({ line: nk.line, col: nk.col, set: nk.notMember!.set, inputs: free });
+    out.push({ name: c.name, line: c.loc.line, module: inModule.has(c.name), inputs, selfSatisfiable, freeNullifiers });
+  }
+  return out;
+}
+
+export function checkFreeNullifiers(program: Program): RawFinding[] {
+  const out: RawFinding[] = [];
+  const seen = new Set<number>();
+  for (const c of constraintMap(program)) {
+    if (c.module) continue;
+    for (const f of c.freeNullifiers) {
+      if (seen.has(f.line)) continue;
+      seen.add(f.line);
+      const list = f.inputs.map((n) => `'${n}'`).join(", ");
+      out.push({
+        ruleId: "MS038",
+        severity: "high",
+        confidence: "medium",
+        loc: { line: f.line, col: f.col },
+        message: `In '${c.name}', the nullifier checked against '${f.set}' is built from ${list}, and nothing else in the circuit pins ${f.inputs.length > 1 ? "them" : "it"} down: no membership proof covers ${f.inputs.length > 1 ? "them" : "it"}, and no equality ties ${f.inputs.length > 1 ? "them" : "it"} to the ledger. The prover can return a new value and get a new nullifier every time, so the "once only" check does not hold (the bug class behind double spends in Aztec 2.0 and StealthDrop). Derive the nullifier from a secret that a membership proof or an owner check already binds, plus fixed context.`,
+      });
+    }
   }
   return out;
 }

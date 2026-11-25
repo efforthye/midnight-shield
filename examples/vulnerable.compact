@@ -266,5 +266,16 @@ export circuit proveScoreAbove(threshold: Uint<16>): [] {
   proofs.increment(1);
 }
 
+// MS038: nothing ties claimSecret() to an eligible list, so every new secret is a new nullifier.
+export ledger airdropClaimed: Set<Bytes<32>>;
+export ledger airdropped: Counter;
+witness claimSecret(): Bytes<32>;
+export circuit claimAirdrop(): [] {
+  const nul = persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:airdrop:"), claimSecret()]);
+  assert(!airdropClaimed.member(disclose(nul)), "already claimed");
+  airdropClaimed.insert(disclose(nul));
+  airdropped.increment(1);
+}
+
 // MS015: declared but never used.
 witness unusedNonce(): Bytes<32>;

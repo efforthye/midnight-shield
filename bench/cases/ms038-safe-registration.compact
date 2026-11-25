@@ -1,0 +1,14 @@
+// expect: none
+// note: signing up is open to every new secret on purpose
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger users: Map<Bytes<32>, Uint<8>>;
+export ledger tiers: Map<Bytes<32>, Uint<8>>;
+witness localSecret(): Bytes<32>;
+export circuit register(): [] {
+  const id = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "p:user:"), localSecret()]));
+  assert(!users.member(id), "user already registered");
+  users.insert(id, 0);
+  tiers.insert(id, 0);
+}

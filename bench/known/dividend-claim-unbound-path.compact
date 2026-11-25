@@ -1,4 +1,4 @@
-// expect: MS009
+// expect: MS009, MS038
 // source: pending (public project; linked here once the maintainers have been told)
 // note: minimal reproduction. The commitment is computed but never compared with path.leaf, and the nullifier comes from the caller's own key, so fresh keys claim again.
 pragma language_version >= 0.28.0;

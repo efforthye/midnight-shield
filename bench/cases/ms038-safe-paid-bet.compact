@@ -1,0 +1,15 @@
+// expect: MS028
+// note: each bet is paid with a coin, so a new identity pays again (MS028 only: this toy never pays out)
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger bets: Set<Bytes<32>>;
+export ledger pot: Counter;
+witness playerSecret(): Bytes<32>;
+export circuit bet(coin: ShieldedCoinInfo): [] {
+  const p = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "q:player:"), playerSecret()]));
+  assert(!bets.member(p), "already bet this round");
+  receiveShielded(disclose(coin));
+  bets.insert(p);
+  pot.increment(1);
+}

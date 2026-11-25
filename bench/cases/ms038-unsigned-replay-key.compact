@@ -1,0 +1,17 @@
+// expect: MS038, MS005
+// note: the replay key is a separate witness, not part of the attested message
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger signer: Bytes<32>;
+export ledger usedNonces: Map<Bytes<32>, Boolean>;
+export ledger minted: Counter;
+witness message(): Bytes<64>;
+witness messageNonce(): Bytes<32>;
+export circuit mint(): [] {
+  assert(persistentHash<Bytes<64>>(message()) == signer, "not attested");
+  const nonce = messageNonce();
+  assert(!usedNonces.member(disclose(nonce)), "nonce already used");
+  usedNonces.insert(disclose(nonce), true);
+  minted.increment(1);
+}
