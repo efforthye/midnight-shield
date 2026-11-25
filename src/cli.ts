@@ -1,15 +1,16 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONFIG_FILE, ConfigError, DEFAULT_CONFIG, loadConfig, withPreset, type Config, type PresetName } from "./config.js";
 import { applyEdits } from "./fixes.js";
 import { createBaseline, type Finding, type LintOptions } from "./linter.js";
-import { lintFiles, listTargetFiles, mapAccessInFiles, mapConstraintsInFiles, mapDisclosuresInFiles, readBaseline } from "./node.js";
+import { fileImportResolver, findCompactFiles, lintFiles, listTargetFiles, mapAccessInFiles, mapConstraintsInFiles, mapDisclosuresInFiles, readBaseline } from "./node.js";
 import { loadPlugins } from "./plugin-loader.js";
 import { PluginError, type CustomRule } from "./plugins.js";
 import { VERSION, formatAccess, formatAccessMarkdown, formatConstraints, formatConstraintsMarkdown, formatDisclosures, formatDisclosuresMarkdown, formatJson, formatMarkdown, formatSarif, formatText } from "./reporters.js";
 import { badgeJson } from "./badge.js";
+import { compareContracts, formatUpgradeMarkdown, formatUpgradeText, type FileUpgrade } from "./upgrade.js";
 import { createSnapshot, diffIsEmpty, diffSnapshots, formatDiffMarkdown, formatDiffText, readSnapshot } from "./privacy-diff.js";
 import { CONFIDENCE_ORDER, RULES, SUPPORTED_LANGUAGE, RULES_BY_ID, SEVERITY_ORDER, type Confidence, type Severity } from "./rules.js";
 
@@ -20,6 +21,10 @@ Tested with Compact language ${SUPPORTED_LANGUAGE.min}–${SUPPORTED_LANGUAGE.ma
 Usage:
   midnight-shield [paths...] [options]     scan files and folders (default: .)
   midnight-shield explain <RULE>           show a rule's documentation
+  midnight-shield upgrade <old> <new>      compare two versions of a contract (files or
+                                           folders): ledger layout, circuit and witness
+                                           signatures, and guards that got weaker
+                                           (--format text|markdown|json, --fail-on, default high)
   midnight-shield snapshot [paths...]      save findings and the disclosure map as JSON
                                            (-o file), to compare later with diff
   midnight-shield diff <base> <head>       privacy diff of two snapshots: what became
@@ -133,6 +138,35 @@ function diffCommand(paths: string[], format: string, output: string | undefined
   // only new findings can fail a diff: existing ones are the base's
   const level = failOn ?? "none";
   if (level !== "none" && diff.newFindings.some((f) => SEVERITY_ORDER.indexOf(f.severity) <= SEVERITY_ORDER.indexOf(level))) process.exitCode = 1;
+}
+
+function upgradeCommand(paths: string[], format: string, output: string | undefined, failOn: Severity | "none" | undefined, color: boolean): void {
+  if (paths.length !== 2) fail("upgrade needs two versions: midnight-shield upgrade old/ new/ (files or folders)");
+  const [oldPath, newPath] = paths.map((p) => resolve(p));
+  if (!existsSync(oldPath) || !existsSync(newPath)) fail(`not found: ${!existsSync(oldPath) ? paths[0] : paths[1]}`);
+  const resolver = fileImportResolver();
+  const pairs: { name: string; oldFile: string; newFile: string }[] = [];
+  if (statSync(oldPath).isDirectory() !== statSync(newPath).isDirectory()) fail("upgrade compares two files or two folders");
+  if (statSync(oldPath).isFile()) pairs.push({ name: relative(process.cwd(), newPath) || newPath, oldFile: oldPath, newFile: newPath });
+  else {
+    const rel = (base: string) => new Map(findCompactFiles([base]).map((f) => [relative(base, resolve(f)), resolve(f)]));
+    const olds = rel(oldPath);
+    const news = rel(newPath);
+    for (const [name, oldFile] of olds) {
+      const newFile = news.get(name);
+      if (newFile) pairs.push({ name, oldFile, newFile });
+    }
+  }
+  const files: FileUpgrade[] = pairs.map((p) => ({
+    file: p.name,
+    changes: compareContracts(readFileSync(p.oldFile, "utf8"), readFileSync(p.newFile, "utf8"), { oldFile: p.oldFile, newFile: p.newFile, resolver }),
+  }));
+  const report =
+    format === "json" ? JSON.stringify({ tool: "midnight-shield", version: VERSION, files }, null, 2) : format === "markdown" ? formatUpgradeMarkdown(files) : formatUpgradeText(files, { color: color && !output });
+  if (output) writeFileSync(output, report + "\n");
+  else process.stdout.write(report + "\n");
+  const level = failOn ?? "high";
+  if (level !== "none" && files.some((f) => f.changes.some((c) => SEVERITY_ORDER.indexOf(c.severity) <= SEVERITY_ORDER.indexOf(level)))) process.exitCode = 1;
 }
 
 async function main(argv: string[]): Promise<void> {
@@ -267,7 +301,7 @@ async function main(argv: string[]): Promise<void> {
         break;
       default:
         if (a.startsWith("-")) fail(`unknown option ${a}`);
-        if (!command && paths.length === 0 && (a === "explain" || a === "snapshot" || a === "diff")) command = a;
+        if (!command && paths.length === 0 && (a === "explain" || a === "snapshot" || a === "diff" || a === "upgrade")) command = a;
         else paths.push(a);
     }
   }
@@ -296,6 +330,7 @@ async function main(argv: string[]): Promise<void> {
 
   if (command === "explain") return explain(paths[0], plugins);
   if (command === "diff") return diffCommand(paths, format, output, failOn);
+  if (command === "upgrade") return upgradeCommand(paths, format, output, failOn, color);
 
   const baselineFile = baselinePath ?? (config.baseline ? resolve(configDir, config.baseline) : undefined);
   let baseline: Set<string> | undefined;

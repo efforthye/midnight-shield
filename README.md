@@ -371,6 +371,29 @@ contracts/hiring.compact
 
 Values are followed through local constants, helper circuits (parameters bound to the caller's arguments, return values followed back), and comparisons inside helpers. This is the Compact counterpart of the under-constrained analyses of Circomspect and Picus for Circom.
 
+## Upgrade check
+
+A deployed contract keeps its ledger state; its maintenance authority can only swap circuit verifier keys. The compiled contract reads ledger fields by position, so new circuits from reordered or retyped declarations read the old state in the wrong place. Compare two versions before you upgrade:
+
+```bash
+npx midnight-shield upgrade release-1.0/contracts contracts
+```
+
+```text
+contract.compact
+  CRITICAL  field-moved  paused  (new line 5)
+  New ledger field 'paused' is inserted at position 1, where the deployed state holds 'fee'. Every field after it
+  moves one position (fee, phase, total), so each of them reads its neighbour's old value. Add new fields at the end.
+
+  CRITICAL  type-changed  Phase  (new line 3)
+  Enum 'Phase' changed from [open, closed] to [pending, open, closed]. The ledger stores enum values by index, ...
+
+  HIGH      access-weakened  setFee  (new line 12)
+  'setFee' checks the caller in the old version but is open to anyone in the new one, and it changes fee.
+```
+
+It reports removed, inserted, reordered and retyped ledger fields, changed enums and structs stored in the ledger, changed circuit and witness signatures, removed circuits (still callable until their verifier key is removed), and circuits whose caller check got weaker, using the access map. The full list and its reasons are in [docs/upgrade.md](docs/upgrade.md). This is the Compact counterpart of `slither-check-upgradeability`.
+
 ## How it works
 
 ```mermaid
@@ -502,10 +525,11 @@ midnight-shield [paths...] [options]
 midnight-shield explain <RULE>
 midnight-shield snapshot [paths...] -o snapshot.json
 midnight-shield diff <base.json> <head.json>
+midnight-shield upgrade <old> <new>
 midnight-shield --init
 
 Output:     -f, --format text|json|sarif|markdown   -o, --output <file>
-            --print disclosures   --badge <file>   --no-code-frame   --no-suggestions   --no-color
+            --print disclosures|access|witnesses   --badge <file>   --no-code-frame   --no-suggestions   --no-color
 Filtering:  --fail-on <severity>  --min-severity <severity>  --min-confidence <confidence>
             --disable <IDs>  --ignore <glob>  --no-sdk  --show-suppressed
 Adoption:   --baseline <file>  --write-baseline <file>  --fix  --fix-dry-run
@@ -597,6 +621,7 @@ Rules were checked against the detector lists of [Slither](https://github.com/cr
 | Unprotected value transfer | `arbitrary-send-eth` | MS019 |
 | Unprotected privileged change | `protected-vars`, `suicidal` | MS011, MS020, MS034, MS035 |
 | Who can call what | `vars-and-auth` printer | `--print access` |
+| Upgrade safety | `slither-check-upgradeability` | `midnight-shield upgrade` |
 | Caller identity from an untrusted source | `tx-origin` | MS001, MS013, MS036 |
 | Weak randomness | `weak-prng` | MS004, MS105, MS113 |
 | Tautologies | `tautology`, `tautological-compare` | MS017 |
@@ -629,7 +654,7 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 
 | Check | What it proves | Command |
 | --- | --- | --- |
-| **Unit and integration tests** (415 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
+| **Unit and integration tests** (421 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
 | **Benchmark** | 188 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
 | **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is checked by hand and listed with the reason in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
@@ -646,8 +671,7 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 - [x] **v0.4** Disclosure map, confidence, baselines, Markdown, plugins, autofix, TypeScript checks, playground, VS Code extension, npm package
 - [x] **v0.5** Repository and folder scanning in the playground, project logo, GitHub Packages
 - [x] **v0.6** Privacy diff on pull requests, status badge, suggested fixes, accuracy benchmark, field test, presets, ignore comments with a reason, witness implementations checked against the contract (MS121)
-- [x] **Next** Access map (`--print access`) with imported modules resolved, inconsistent guards (MS035), claimed identities (MS036), witness constraint report (`--print witnesses`) and self-satisfiable checks (MS037)
-- [ ] Upgrade check: compare two versions of a contract for changes that break deployed state or DApps
+- [x] **Next** Access map (`--print access`) with imported modules resolved, inconsistent guards (MS035), claimed identities (MS036), witness constraint report (`--print witnesses`) and self-satisfiable checks (MS037), upgrade check (`midnight-shield upgrade`)
 - [ ] MCP server and language server
 - [ ] VS Code Marketplace release
 - [ ] Data-flow facts for plugins

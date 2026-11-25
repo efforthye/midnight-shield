@@ -15,3 +15,4 @@ export { createSnapshot, readSnapshot, diffSnapshots, diffIsEmpty, formatDiffMar
 export { badgeJson, type BadgeJson } from "./badge.js";
 export { accessMap, type CircuitAccess, type Guard, type GuardKind, type Who } from "./access.js";
 export { constraintMap, type CircuitConstraints, type InputReport, type Constraint } from "./constraints.js";
+export { compareContracts, compareShapes, formatUpgradeText, formatUpgradeMarkdown, type UpgradeChange, type UpgradeKind, type FileUpgrade } from "./upgrade.js";
