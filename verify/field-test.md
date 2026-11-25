@@ -12,7 +12,8 @@ Projects are listed by name only where the maintainers have been told (MeshJS) o
 | With the access map rules (MS035, MS036) | 131 | 130 |
 | With the witness constraint rule (MS037) | 147 | 146 |
 | After the first blind test | 139 | 138 |
-| Current version (seed prefixes and seeds printed for the user to save are now low) | 136 | 135 |
+| After the second blind test (seed prefixes and seeds printed for the user to save are now low) | 136 | 135 |
+| Current version (an unchecked membership proof is now medium: supply positions that can never be withdrawn) | 137 | 136 |
 
 The [blind tests](blind-test.md) check the tool on projects it had never seen. Every verdict above is listed in [field-verdicts.md](field-verdicts.md).
 

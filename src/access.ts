@@ -52,7 +52,7 @@ export interface CircuitAccess {
   who: Who;
   guards: Guard[];
   writes: { field: string; line: number; col: number; overwrite: boolean }[];
-  tokens: { op: string; line: number }[];
+  tokens: { op: string; line: number; toStored?: boolean }[];
 }
 
 const CALLER_KINDS = new Set<GuardKind>(["secret", "allow-list", "signature", "merkle", "caller-key", "claimed-id", "witness-result", "imported"]);
@@ -173,6 +173,23 @@ class AccessScanner {
     return param;
   }
 
+  /** The coins go to an address kept in the ledger (`depositor`, the contract itself), not one the caller names. */
+  private toStoredRecipient(op: string, args: Expr[]): boolean {
+    if (op.startsWith("receive") || !args.length) return false;
+    const ADDRESS = /^(left|right|ZswapCoinPublicKey|UserAddress|ContractAddress|Either)$/;
+    const named = (a: Expr) => [...exprs(a)].some((x) => (x.kind === "call" && ADDRESS.test(identName(x))) || (x.kind === "struct" && ADDRESS.test(x.type.name)));
+    const recipient = args.find(named) ?? (op.includes("Unshielded") || op.startsWith("mint") ? args[args.length - 1] : args[1]);
+    if (!recipient) return false;
+    let field = false;
+    for (const x of exprs(recipient)) {
+      if (x.kind !== "ident") continue;
+      if (rootField(x, this.ctx)) field = true;
+      else if (!ADDRESS.test(x.name) && x.name !== "kernel" && x.name !== "disclose") return false;
+    }
+    // kernel.self(): the contract keeps the coins
+    return field || [...exprs(recipient)].some((x) => x.kind === "member" && x.property === "self");
+  }
+
   private classify(cond: Expr, env: Map<string, Expr>, line: number, via: string | undefined, params = new Set<string>(), message = ""): Guard {
     const fields = this.fieldsIn(cond, env);
     const g = (kind: GuardKind): Guard => {
@@ -264,7 +281,7 @@ class AccessScanner {
           continue;
         }
         if (TOKEN_OPS.has(name)) {
-          out.tokens.push({ op: name, line: e.loc.line });
+          out.tokens.push({ op: name, line: e.loc.line, toStored: this.toStoredRecipient(name, e.args) });
           continue;
         }
         if (e.callee.kind === "member" && WRITE_METHODS.has(e.callee.property)) {
@@ -458,12 +475,16 @@ export function checkClaimedIdentity(program: Program, raw: RawFinding[] = [], i
       if (g.kind !== "claimed-id" || seen.has(g.line)) continue;
       seen.add(g.line);
       const p = g.claimed ? `the parameter '${g.claimed}'` : "a parameter";
+      // every transfer goes to an address kept in the ledger, and nothing else changes but status
+      // fields: anyone can trigger it, but the coins still reach the intended party
+      const sends = c.tokens.filter((t) => !t.op.startsWith("receive"));
+      const forcedOnly = sends.length > 0 && sends.every((t) => t.toStored);
       out.push({
         ruleId: "MS036",
-        severity: "critical",
+        severity: forcedOnly ? "high" : "critical",
         confidence: "medium",
         loc: { line: g.line, col: 1 },
-        message: `'${c.name}' checks the caller by comparing '${g.stored}' with ${p}. Ledger values are public, so anyone can read '${g.stored}' and pass it as ${g.claimed ? `'${g.claimed}'` : "that parameter"}: the check lets everyone through. Make the caller prove knowledge of a secret instead: store hash(domain, secret) in '${g.stored}' and compare it with the same hash recomputed from a witness.`,
+        message: `'${c.name}' checks the caller by comparing '${g.stored}' with ${p}. Ledger values are public, so anyone can read '${g.stored}' and pass it as ${g.claimed ? `'${g.claimed}'` : "that parameter"}: the check lets everyone through.${forcedOnly ? " The coins still go to the address kept in the ledger, so this does not let anyone take them, but anyone can trigger the transfer (and settle the contract) at a moment of their choosing." : ""} Make the caller prove knowledge of a secret instead: store hash(domain, secret) in '${g.stored}' and compare it with the same hash recomputed from a witness.`,
       });
     }
   }

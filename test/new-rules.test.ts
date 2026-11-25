@@ -465,3 +465,20 @@ describe("fixes from the field test", () => {
     assert.ok(has(c(`${base}export circuit claim(): [] {\n  ${body}const k = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "t:a:"), s]));\n  att.insert(k, (att.lookup(k) + 1) as Uint<64>);\n}`), "MS008"));
   });
 });
+
+// Severities settled by checking the second blind test's findings by hand (bench cases of the same name).
+describe("severity follows what the attacker gets", () => {
+  const sev = (file: string, rule: string) => lintFiles([`bench/cases/${file}`]).find((f) => f.ruleId === rule)?.severity;
+  it("MS036: high when the coins can only reach the stored party, critical when the caller names the recipient", () => {
+    assert.equal(sev("ms036-forced-settlement.compact", "MS036"), "high");
+    assert.equal(sev("ms036-pays-the-caller.compact", "MS036"), "critical");
+  });
+  it("MS102: medium for a seed shown to the user through a logger, low for a short prefix", () => {
+    assert.equal(sev("ms102-logger-shows-seed.ts", "MS102"), "medium");
+    assert.equal(sev("ms102-seed-prefix.ts", "MS102"), "low");
+    assert.equal(sev("ms102-prefix-and-full.ts", "MS102"), "high");
+  });
+  it("MS015: medium for an unchecked membership proof", () => {
+    assert.equal(sev("ms015-unchecked-proof.compact", "MS015"), "medium");
+  });
+});

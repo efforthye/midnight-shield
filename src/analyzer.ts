@@ -9,6 +9,7 @@
 import type { WitnessRole } from "./constraints.js";
 import type { Decl, Expr, Loc, Param, Program, Stmt, TypeRef } from "./ast.js";
 import { SUPPORTED_LANGUAGE, RULES_BY_ID, type Confidence, type Severity } from "./rules.js";
+import { stmtExprs, stmts } from "./auth-writes.js";
 
 export interface RawFinding {
   ruleId: string;
@@ -178,6 +179,8 @@ interface Frame {
   ownpkCompare?: Loc;
   /** randomness expressions used by commitments in this function, for reuse detection */
   commitRand: Map<string, { loc: Loc; value: string }>;
+  /** locals of this circuit that are made public somewhere in it (disclose(x), a ledger key, a return) */
+  published?: Set<string>;
   /** name prefix of the module whose code is running (for imported modules) */
   prefix: string;
   /** when running code from another file: the call site in the analyzed file */
@@ -390,6 +393,7 @@ export class Analyzer {
     for (const p of params) vars.set(p.name, this.paramInfo(p));
     const nullifier: NullifierState = { negMember: false, writes: false, checkedPaths: new Map(), boundPaths: new Set(), rootVars: new Map() };
     const frame: Frame = { name, exported, scopes: [{ vars }], silent: false, depth: 0, stack: [name], returns: [], commitRand: new Map(), prefix: "", nullifier };
+    frame.published = this.publishedLocals(body, frame);
     this.execBlock(body, frame);
 
     for (const [path, loc] of nullifier.checkedPaths) {
@@ -417,6 +421,34 @@ export class Analyzer {
         `'${name}' authorizes the caller with an anonymous Merkle membership proof and then changes state, but never checks a nullifier. The same member can repeat this action. If each member should act once, derive a nullifier (hash of a tag and the member's secret), assert it is not in a set, then insert it.`,
       );
     }
+  }
+
+  /** Locals that the circuit makes public: `disclose(c)`, `map.insert(c, …)`, `return disclose(c)`. */
+  private publishedLocals(body: Stmt[], frame: Frame): Set<string> {
+    const locals = new Set<string>();
+    for (const s of stmts(body)) if (s.kind === "const") for (const n of s.names) locals.add(n);
+    const out = new Set<string>();
+    const plain = (a: Expr): string | undefined => {
+      const x = a.kind === "call" && a.callee.kind === "ident" && a.callee.name === "disclose" && a.args[0] ? a.args[0] : a;
+      return x.kind === "ident" && locals.has(x.name) ? x.name : undefined;
+    };
+    for (const s of stmts(body)) {
+      for (const e of stmtExprs(s)) {
+        if (e.kind !== "call") continue;
+        if (e.callee.kind === "ident" && e.callee.name === "disclose" && e.args[0]) {
+          const n = plain(e.args[0]);
+          if (n) out.add(n);
+        }
+        if (e.callee.kind === "member") {
+          const root = rootIdent(e.callee.object);
+          if (root && !locals.has(root) && this.resolveName(this.ledgers, root, frame) !== undefined) for (const a of e.args) {
+            const n = plain(a);
+            if (n) out.add(n);
+          }
+        }
+      }
+    }
+    return out;
   }
 
   private paramInfo(p: Param): Info {
@@ -1050,6 +1082,14 @@ export class Analyzer {
           "MS004",
           e.loc,
           "This commitment's randomness comes from public ledger state, so anyone can recompute the commitment for every candidate value. Use secret randomness from a witness or private input.",
+        );
+      } else if (randExpr.kind === "ident" && frame.published?.has(randExpr.name) && !(isPrivate(value) && (value.bits ?? 0) >= 128)) {
+        // (a 32-byte secret as the value cannot be guessed, whatever the randomness: a keyed binding)
+        // persistentCommit(category, c) where c is also written to the ledger or returned
+        this.report(
+          "MS004",
+          e.loc,
+          `This commitment's randomness '${randExpr.name}' is made public in this circuit (written to the ledger, disclosed or returned), so anyone can recompute the commitment for every candidate value of what it hides. Use separate secret randomness from a witness.`,
         );
       } else if (rand.bits !== undefined && rand.bits < STRONG_RANDOMNESS_BITS) {
         this.report(

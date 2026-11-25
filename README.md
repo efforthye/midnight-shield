@@ -566,7 +566,7 @@ Accuracy is measured on code the tool's author did not write, and checked by a r
 
 **Field test on third-party code.** 36 public Midnight projects found through GitHub search, scanned with default settings, every medium-or-worse finding checked against the source. On the first scan, before any change for this test, **121 of 134 findings were real issues (90% precision)**. What it surfaced and what changed is in [verify/field-test.md](verify/field-test.md), along with why the official examples and OpenZeppelin code show so few findings (some patterns, such as Boolean witnesses, never occur there).
 
-**Regression suite.** These cases were written by the author, so they show that each rule keeps doing what it is meant to, not how it does on new code. 226 labeled files: 145 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
+**Regression suite.** These cases were written by the author, so they show that each rule keeps doing what it is meant to, not how it does on new code. 232 labeled files: 150 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
 
 | Rule | Expected findings | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -677,7 +677,7 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 | Check | What it proves | Command |
 | --- | --- | --- |
 | **Unit and integration tests** (421 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
-| **Regression suite** | 226 labeled files, written by the author: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
+| **Regression suite** | 232 labeled files, written by the author: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
 | **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is checked by hand and listed with the reason in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |

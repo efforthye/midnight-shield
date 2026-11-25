@@ -148,15 +148,20 @@ function lintSdkTokens(tokens: Token[]): RawFinding[] {
         // (only text that is itself printed: a "backup" key name elsewhere in the code says nothing)
         const printedLines = new Set(tokens.filter((x, k) => x.value === "console" && tokens[k + 1]?.value === "." && x.line < t.line && x.line >= t.line - 4).map((x) => x.line));
         const text = tokens.filter((x, k) => x.kind === "string" && ((k > i && k < close) || printedLines.has(x.line))).map((x) => x.value).join(" ");
+        // logger.info(`Your wallet seed is: ${seed}`): shown to the user on purpose, but a logger also writes
+        // to its other destinations (log files, CI output), which is the real exposure
+        const toUser = t.value !== "console" && /\byour\b[^`'"]*(seed|mnemonic|phrase|key|password)|save|back ?up|write (it |this |them )?down/i.test(text);
         const shownOnPurpose = t.value === "console" && /save|back ?up|write (it |this |them )?down|keep (it|this|them)|store (it|this|them)|don'?t lose|you'?ll need|recovery (words|phrase)|exactly as printed/i.test(text);
         out.push({
           ruleId: "MS102",
-          severity: shownOnPurpose ? "low" : "high",
+          severity: shownOnPurpose ? "low" : toUser ? "medium" : "high",
           confidence: "medium",
           loc: loc(t),
           message: shownOnPurpose
             ? `'${secrets.join("', '")}' is printed for the user to save. That is fine in an interactive CLI, but stdout is often recorded (CI logs, terminal history, screen sharing). Print it only when a person is at the terminal, and never in scripts that run in CI.`
-            : `'${secrets.join("', '")}' looks like a secret and is passed to ${t.value}.${tokens[i + 2].value}(). Logs are stored and shared (CI output, crash reports, browser consoles). Remove it or log a non-reversible identifier instead.`,
+            : toUser
+              ? `'${secrets.join("', '")}' is shown to the user through ${t.value}.${tokens[i + 2].value}(). A logger also writes it to its other destinations (log files on disk, CI output, log services), where it stays. Print it once with console, only when a person is at the terminal, and keep it out of the logger.`
+              : `'${secrets.join("', '")}' looks like a secret and is passed to ${t.value}.${tokens[i + 2].value}(). Logs are stored and shared (CI output, crash reports, browser consoles). Remove it or log a non-reversible identifier instead.`,
         });
       }
     }

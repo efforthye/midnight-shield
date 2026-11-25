@@ -1,0 +1,11 @@
+// expect: none
+// note: the committed value is a 32-byte secret: public randomness does not make it guessable
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger memories: Map<Bytes<32>, Bytes<32>>;
+witness ownerSecret(): Bytes<32>;
+export circuit store(digest: Bytes<32>, salt: Bytes<32>): [] {
+  const c = persistentCommit<Bytes<32>>(digest, salt);
+  memories.insert(disclose(c), disclose(persistentCommit<Bytes<32>>(ownerSecret(), c)));
+}

@@ -1,0 +1,14 @@
+// expect: MS036
+// note: anyone can trigger the refund; the coins still go to the stored depositor (reported as high, not critical)
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger depositor: Bytes<32>;
+export ledger settled: Boolean;
+export circuit refund(coin: QualifiedShieldedCoinInfo, caller: Bytes<32>): ShieldedSendResult {
+  assert(!settled, "already settled");
+  assert(disclose(caller) == depositor, "caller is not depositor");
+  const r = sendShielded(disclose(coin), left<ZswapCoinPublicKey, ContractAddress>(ZswapCoinPublicKey { bytes: depositor }), disclose(coin.value));
+  settled = true;
+  return r;
+}

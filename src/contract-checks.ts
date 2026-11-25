@@ -57,12 +57,18 @@ function unused(program: Program): RawFinding[] {
   const out: RawFinding[] = [];
   walk(program.decls, (d) => {
     if (d.kind === "witness" && !used.has(d.name)) {
+      // a membership proof (a Merkle path, or a vector of sibling hashes named like a proof) that no
+      // circuit checks: the contract was meant to restrict who acts, and does not
+      const type = d.returnType?.text.replace(/\s/g, "") ?? "";
+      const proof = /MerkleTreePath/.test(type) || (/^Vector<\d+,(Bytes<32>|Field)>$/.test(type) && /proof|path|sibling|merkle/i.test(d.name));
       out.push({
         ruleId: "MS015",
-        severity: "info",
-        confidence: "high",
+        severity: proof ? "medium" : "info",
+        confidence: proof ? "medium" : "high",
         loc: d.loc,
-        message: `Witness '${d.name}' is declared but never used. Remove it, or check whether a circuit was meant to call it (a missing check is a common cause).`,
+        message: proof
+          ? `Witness '${d.name}' looks like a membership proof, but no circuit ever calls it. Either the action it was meant to guard skips the check (so anyone can do it), or that action was never written (positions that can be added but never withdrawn, for example). Verify the proof where the action happens (for example tree.checkRoot(merkleTreePathRoot(path)) with path.leaf bound to the caller), or remove it.`
+          : `Witness '${d.name}' is declared but never used. Remove it, or check whether a circuit was meant to call it (a missing check is a common cause).`,
       });
     }
     if (d.kind === "circuit" && !d.exported && d.body && !used.has(d.name)) {

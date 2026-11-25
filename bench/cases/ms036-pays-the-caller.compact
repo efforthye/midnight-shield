@@ -1,0 +1,14 @@
+// expect: MS036
+// note: the caller names where the coins go: critical
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger beneficiary: Bytes<32>;
+export ledger settled: Boolean;
+export circuit release(coin: QualifiedShieldedCoinInfo, caller: Bytes<32>, to: ZswapCoinPublicKey): ShieldedSendResult {
+  assert(!settled, "already settled");
+  assert(disclose(caller) == beneficiary, "caller is not beneficiary");
+  const r = sendShielded(disclose(coin), left<ZswapCoinPublicKey, ContractAddress>(disclose(to)), disclose(coin.value));
+  settled = true;
+  return r;
+}

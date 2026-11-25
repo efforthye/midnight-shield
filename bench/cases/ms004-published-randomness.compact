@@ -1,0 +1,13 @@
+// expect: MS004
+// note: the category is committed with randomness that is itself on the ledger: 256 tries open it
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger memories: Map<Bytes<32>, Boolean>;
+export ledger categories: Map<Bytes<32>, Bytes<32>>;
+export circuit store(digest: Bytes<32>, salt: Bytes<32>, category: Uint<8>): Bytes<32> {
+  const c = persistentCommit<Bytes<32>>(digest, salt);
+  memories.insert(disclose(c), true);
+  categories.insert(disclose(c), disclose(persistentCommit<Uint<8>>(category, c)));
+  return disclose(c);
+}
