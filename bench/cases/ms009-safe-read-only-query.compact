@@ -1,0 +1,9 @@
+// expect: none
+// note: returns whether a public commitment is in the set; changes nothing and gates nothing
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger receipts: MerkleTree<10, Bytes<32>>;
+export circuit checkReceipt(path: MerkleTreePath<10, Bytes<32>>): Boolean {
+  return receipts.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path)));
+}

@@ -1,0 +1,160 @@
+{
+ "note": "Second blind test: the pre-registered sample (nextSampleCommitment in blind-verdicts.json), scanned once with the version of 2026-11-25 before any change. One SHA-256 commitment per medium-or-worse finding, opened once the projects have been told.",
+ "sampleCommitment": "be3db8829e97d6ff4f02612ebcf8f9963593e9e6d31bbcb6e4e9481c12ea1a54",
+ "public": [],
+ "withheld": [
+  {
+   "commitment": "a6ca9e3d1f17bb64e5bbf63651cec8bad1dc415af8730dbaa606ae15b43b075b"
+  },
+  {
+   "commitment": "b9a41222b3c0fdc2f9230edd03db30a42c62ccae376b14f9fb1dc027f62ad53c"
+  },
+  {
+   "commitment": "069593990d632dd85424eeec1759456c8b66a66723fe47fad62b9dbe9b3f0a3b"
+  },
+  {
+   "commitment": "af7208f213592758dde48b220b175a76846e757e045f49fa15069de3111febd6"
+  },
+  {
+   "commitment": "1dad5999c823f6a0564657de71f8664ee663cae724cb97de698dc3b9325cc90b"
+  },
+  {
+   "commitment": "83616f8ef975fd52a0e6e5b10a1c7b7fbe1dad860886f2def62b6f2a0a59df0d"
+  },
+  {
+   "commitment": "d1e01b0e5f3237a4cb83f2837352291d315b6a2dc4657345e41c45babec8a46a"
+  },
+  {
+   "commitment": "d1dac5db4333f7cbdc98b370e2c36791fce5c98d4530a04939df25ad939d1e3f"
+  },
+  {
+   "commitment": "5673374730feb4a98ede865159c27554a2463131ccb4e6efcdc9fc5b56df4653"
+  },
+  {
+   "commitment": "13c8325ef20c30b6098fd50935ee4719ca663f3578ff5b3fbe4189e76040996b"
+  },
+  {
+   "commitment": "0085daf6542591043991ec4d694c95ad87725e524d65e62e8a98a60cb497f91a"
+  },
+  {
+   "commitment": "6dcc232eb819f608efc0eaebc63bd0b75b59e41ce1ab59979ea8411ebbcb0a80"
+  },
+  {
+   "commitment": "3363f420e43c57a5270685656a0d702605fbe5abd69fd6fc7a58a6e3d7d95af7"
+  },
+  {
+   "commitment": "7dd27dd8f09ba28a4f20991d9491d652da5a0cbed0b7b7b099d8649d2a91e8c5"
+  },
+  {
+   "commitment": "102c90cec4b88c7f5379818e8f9c4a5b0343f26e32fabc5ef2df241016c7b059"
+  },
+  {
+   "commitment": "c0b670fcf30faf4844b5d68fe26675d57b2815580814703e731e592372dff269"
+  },
+  {
+   "commitment": "685604e91263094010113c07a3981348a4b68fe3f8efc26fefca56360f13ff6a"
+  },
+  {
+   "commitment": "1f6d72e71d1a1d73b9fb97fbdffc756129187876d2eedea42ea3998c592cd46f"
+  },
+  {
+   "commitment": "db0b602a15cae0c96785e5fc2772b3e4346f9b01a235171033ddeacd92616409"
+  },
+  {
+   "commitment": "56c45c7e8e82f510b5e25e795d11eadb951cfdcb289f98255a13cd3019e5dd37"
+  },
+  {
+   "commitment": "09d79a1bc7f36003d4856da965a68f168d709489b0851a230189de5e545db1c9"
+  },
+  {
+   "commitment": "bcb9d481b4eb41ffa19e88fc56923f75098b6568c9b2348c5860a4201d7fc731"
+  },
+  {
+   "commitment": "db983fc5b05f5256808d6470f12ae252cadef7c93a688fd19bfa970afafb5811"
+  },
+  {
+   "commitment": "146c65a1109fbd0205157bb061f4dd3f0fb3fc42c0108fb6a5555d48bd10f031"
+  },
+  {
+   "commitment": "e1485b94f63cf50d0fd0337d98a383c3b79109040e656a77ac8eb55a7c38cf52"
+  },
+  {
+   "commitment": "2aa3948c8b88dbe6f54c718a89754a36125f66b28f28981800c38a480d973f4a"
+  },
+  {
+   "commitment": "ee43121c3bf0adc22130df150d794d07459faf7419a9ff621c7ebef4a0a28abb"
+  },
+  {
+   "commitment": "740558994a253911baa20de081886ef7e6971b1cce41af2338516509b439d8dc"
+  },
+  {
+   "commitment": "fa5e975d8838c4120de50d6f08f744712228f132be73a72e42f9c84d4c6cf723"
+  },
+  {
+   "commitment": "435144156d4dd981438fa749cd0d937c36a6948cb931bc8aae9d6100e3cc43ce"
+  },
+  {
+   "commitment": "ceb74784295134263e5f9c2e5bb45f2c08a9fd4d2ee4a1c2184001d490097059"
+  },
+  {
+   "commitment": "45900543af08ef9be55c3330ab441fd56a47bd5233792274df4796b01bda973f"
+  },
+  {
+   "commitment": "7dd2a25e13b0d90a9d5b075b36adae229ba315fb12682e7bf9f18d0274594d11"
+  },
+  {
+   "commitment": "ada960ad081039f409e7d58232e7e804838aa4eff9d4a14bb2502b5a9f602b2d"
+  },
+  {
+   "commitment": "d54dc6898c9925d832df39a064eb41d390882d0b5cb9286de3de4cf6705b2923"
+  },
+  {
+   "commitment": "6c0c124178c82e18ff3f99825341d160ec6901ab224f6740274ea72382752338"
+  },
+  {
+   "commitment": "d164ecdb44999a4a0bd572ddfb513d6239895bd8a96d5d85d815d759b5d7619b"
+  },
+  {
+   "commitment": "2a3af37feaf28785f7d839e50aa39d728170f0dae8ce959c64bd0e04050d9633"
+  },
+  {
+   "commitment": "28aa92822d16584b7db0a4d09c6e61834a2f0fc59a9668f0b7409b289ac32962"
+  },
+  {
+   "commitment": "f6e6c39cd29f2efce62333b9f571369499e70cb61effb528f1222e9d51baccfa"
+  },
+  {
+   "commitment": "e8ad92d73a88a4daf07821f4dd3ba2b45fc08ffe414460558ded45d7da92a352"
+  },
+  {
+   "commitment": "e524c09a65037902eb5a98fdabe5260466ab80c2140e43cea51c7ac6dfab03a3"
+  },
+  {
+   "commitment": "c2e19f4b06e4df6b420f73ffc9125988af3a4952b7f28a6273ae3f584720af90"
+  },
+  {
+   "commitment": "1ae49ce51b1661a6657cc0e6174880a599f6a20371f7eedd2e45f4f79312ce97"
+  },
+  {
+   "commitment": "deff5413441bdccb990d9ba59ed442f5132fbaeeb087514104481be1ee5b0fc1"
+  },
+  {
+   "commitment": "ddcfb1b220bf9ed17a0391a7c8335358cba46056814a1294cebc77b11827fc74"
+  },
+  {
+   "commitment": "bd7212a7eee424401c58f0d0e1108a9bdaa4e3d97cc66dd2f1be6c780e970410"
+  },
+  {
+   "commitment": "acfa65b3d8831b354b831e229257af5409cd433ef6ccabc9e0fa2c4f7a48ac41"
+  },
+  {
+   "commitment": "8920c9cfd53904304f220407e55ee39707c4087852c04222f32f605033a339fb"
+  },
+  {
+   "commitment": "4247989b1e8ae2dd557d4cb31d14da4a0a6dc34e30606ae632d570ebb8b1aaa0"
+  },
+  {
+   "commitment": "7dc04b881d0c54b80e8275e39f1494a5cec596ecbb1af0831f53700ebc736c2a"
+  }
+ ]
+}

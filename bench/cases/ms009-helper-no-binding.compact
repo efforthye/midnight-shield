@@ -1,0 +1,16 @@
+// expect: MS009, MS008
+// note: the helper never binds the leaf
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger members: MerkleTree<10, Bytes<32>>;
+export ledger acted: Counter;
+witness memberPath(): MerkleTreePath<10, Bytes<32>>;
+circuit requireMember(): [] {
+  const path = memberPath();
+  assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a member");
+}
+export circuit act(): [] {
+  requireMember();
+  acted.increment(1);
+}

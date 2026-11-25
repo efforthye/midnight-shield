@@ -83,6 +83,15 @@ describe("parser: expressions", () => {
     assert.equal(cmp.kind === "binary" && cmp.op, "<");
   });
 
+  it("reads Bytes [...] byte-vector literals, with spreads", () => {
+    const e = firstExpr('Bytes [0x84, ...pad(10, "Signature1"), 0x58];');
+    assert.equal(e.kind, "vector");
+    assert.equal(e.kind === "vector" && e.elements.length, 3);
+    assert.equal(e.kind === "vector" && e.elements[1].kind, "spread");
+    const idx = firstExpr("Bytes[0];");
+    assert.equal(idx.kind, "vector");
+  });
+
   it("reads `>=` written as two tokens", () => {
     const e = firstExpr("a >= b;");
     assert.equal(e.kind === "binary" && e.op, ">=");

@@ -744,6 +744,11 @@ class Parser {
       this.expect("]");
       return { kind: "vector", elements, loc };
     }
+    // Bytes [0x84, ...pad(10, "x"), 0x58]: a byte-vector literal
+    if (t.kind === "ident" && t.value === "Bytes" && this.peek(1).value === "[") {
+      this.next();
+      return this.parsePrimary();
+    }
     if (t.kind === "ident") {
       this.next();
       // single-parameter lambda without parentheses: x => ...

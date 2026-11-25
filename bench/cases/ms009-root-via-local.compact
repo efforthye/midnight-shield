@@ -1,0 +1,12 @@
+// expect: MS009
+// note: the root check gates an assert through a local, and the leaf is never bound
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger members: MerkleTree<10, Bytes<32>>;
+witness memberPath(): MerkleTreePath<10, Bytes<32>>;
+export circuit proveMember(): [] {
+  const path = memberPath();
+  const ok = members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path)));
+  assert(ok, "not a member");
+}

@@ -1,0 +1,13 @@
+// expect: MS013, MS036
+// note: comparing a public id with a parameter proves nothing, so the Boolean is still anyone's
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger attester: Bytes<32>;
+export ledger released: Boolean;
+witness deliveryOk(): Boolean;
+export circuit attest(caller: Bytes<32>): [] {
+  assert(attester == disclose(caller), "only the attester");
+  assert(deliveryOk(), "condition not met");
+  released = true;
+}

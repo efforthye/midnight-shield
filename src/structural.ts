@@ -103,8 +103,46 @@ function witnessControlledAssert(program: Program): RawFinding[] {
   helpers(program.decls);
   if (!bools.size) return [];
   const out: RawFinding[] = [];
+  const allWitnesses = new Set<string>();
+  const ledgerFields = new Set<string>();
+  const gather = (ds: Decl[]) => {
+    for (const d of ds) {
+      if (d.kind === "module") gather(d.decls);
+      if (d.kind === "witness") allWitnesses.add(d.name);
+      if (d.kind === "ledger") ledgerFields.add(d.name);
+    }
+  };
+  gather(program.decls);
+  // helper circuits that hash: circuit adminKey(sk) { return persistentHash(…) }
+  const hashers = new Set(HASHING);
+  for (const b of bodies(program.decls)) if ([...stmts(b.body)].some((st) => [...stmtExprs(st)].some((e) => isCallTo(e, HASHING)))) hashers.add(b.name);
+  // assert(persistentHash(secret) == attesterCommit): the caller has proved who it is, so a Boolean
+  // witness checked afterwards is that party's own statement (the attester saying delivery happened)
+  const authenticatesIn = (body: Stmt[]) => {
+    const secretLocals = taintedLocals(body, (e) => [...exprs(e)].some((x) => isCallTo(x, allWitnesses)));
+    return (e: Expr): boolean => {
+      const x = unwrap(e);
+      if (x.kind !== "binary" || x.op !== "==") return false;
+      const proves = (side: Expr) =>
+        [...exprs(side)].some((y) => isCallTo(y, hashers)) && [...exprs(side)].some((y) => isCallTo(y, allWitnesses) || (y.kind === "ident" && secretLocals.has(y.name)));
+      // the other side must be stored state: a parameter is chosen by the same prover
+      const stored = (side: Expr) => {
+        const y = unwrap(side);
+        return y.kind === "ident" && ledgerFields.has(y.name);
+      };
+      return (proves(x.left) && stored(x.right)) || (proves(x.right) && stored(x.left));
+    };
+  };
+  // helpers like requireAdmin() whose first-level body makes that check
+  const authHelpers = new Set<string>();
+  for (const b of bodies(program.decls)) {
+    const auth = authenticatesIn(b.body);
+    if (b.body.some((st) => st.kind !== "if" && st.kind !== "for" && [...stmtExprs(st)].some((e) => callee(e) === "assert" && e.kind === "call" && !!e.args[0] && auth(e.args[0])))) authHelpers.add(b.name);
+  }
   for (const b of bodies(program.decls)) {
     const fromWitness = taintedLocals(b.body, (e) => isCallTo(unwrap(e), bools));
+    const authenticates = authenticatesIn(b.body);
+    let authenticated = false;
     const isWitnessBool = (e: Expr): string | undefined => {
       const x = unwrap(e);
       if (isCallTo(x, bools)) return callee(x);
@@ -127,6 +165,7 @@ function witnessControlledAssert(program: Program): RawFinding[] {
       // if (disclose(isAdmin())) { … }: the same check written as a branch
       if (s.kind === "if") {
         const w = isWitnessBool(s.test);
+        // (kept after a caller check too: the branch is still the prover's choice, see core-ms013-if-after-check)
         if (w) {
           out.push({
             ruleId: "MS013",
@@ -137,10 +176,14 @@ function witnessControlledAssert(program: Program): RawFinding[] {
           });
         }
       }
+      const unconditional = b.body.includes(s) && s.kind !== "if" && s.kind !== "for";
+      if (unconditional && [...stmtExprs(s)].some((e) => e.kind === "call" && isCallTo(e, authHelpers))) authenticated = true;
       for (const e of stmtExprs(s)) {
         if (callee(e) !== "assert" || e.kind !== "call" || !e.args[0]) continue;
+        // only an unconditional check counts: one inside an if may not run
+        if (unconditional && authenticates(e.args[0])) authenticated = true;
         const w = isWitnessBool(e.args[0]);
-        if (!w) continue;
+        if (!w || authenticated) continue;
         out.push({
           ruleId: "MS013",
           severity: "high",
@@ -227,15 +270,30 @@ function paramRandomnessDisclosed(program: Program): RawFinding[] {
   const circuits: Extract<Decl, { kind: "circuit" }>[] = [];
   const walkC = (ds: Decl[]) => ds.forEach((d) => (d.kind === "circuit" && d.body ? circuits.push(d) : d.kind === "module" ? walkC(d.decls) : undefined));
   walkC(program.decls);
+  const witnessTypes = new Map<string, string>();
+  const walkW = (ds: Decl[]) => ds.forEach((d) => (d.kind === "witness" ? witnessTypes.set(d.name, d.returnType?.text ?? "") : d.kind === "module" ? walkW(d.decls) : undefined));
+  walkW(program.decls);
   for (const c of circuits) {
     const params = new Set(c.params.map((p) => p.name));
     const rand = new Set<string>();
     const all = [...stmts(c.body!)].flatMap((s) => [...stmtExprs(s)]);
+    // persistentCommit(ownerSecret(), key): the committed value is 32 secret bytes from a witness, so
+    // knowing the randomness does not let anyone guess it; the commitment works as a keyed binding
+    const keyedBinding = (e: Extract<Expr, { kind: "call" }>) => {
+      const v = unwrap(e.args[0]);
+      return v.kind === "call" && v.callee.kind === "ident" && isSecretName(v.callee.name) && /^Bytes<\s*32\s*>$/.test((witnessTypes.get(v.callee.name) ?? "").replace(/\s/g, ""));
+    };
+    const keyedOnly = new Set<string>();
+    const notKeyed = new Set<string>();
     for (const e of all) {
       if (!isCallTo(e, COMMIT) || e.kind !== "call" || e.args.length < 2) continue;
       const r = unwrap(e.args[e.args.length - 1]);
-      if (r.kind === "ident" && params.has(r.name)) rand.add(r.name);
+      if (r.kind === "ident" && params.has(r.name)) {
+        rand.add(r.name);
+        (keyedBinding(e) ? keyedOnly : notKeyed).add(r.name);
+      }
     }
+    for (const r of keyedOnly) if (!notKeyed.has(r)) rand.delete(r);
     if (!rand.size) continue;
     // disclose(p) on its own, not the commitment that contains p
     if (all.some((e) => callee(e) === "assert" && e.kind === "call" && !!e.args[0] && [...exprs(e.args[0])].some((x) => isCallTo(x, COMMIT)))) continue;

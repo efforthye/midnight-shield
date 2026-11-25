@@ -1,0 +1,26 @@
+// expect: none
+// note: the helper binds the leaf to its parameter, which the caller fills from secretKey()
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger members: MerkleTree<10, Bytes<32>>;
+export ledger acted: Counter;
+export ledger used: Set<Bytes<32>>;
+witness secretKey(): Bytes<32>;
+witness memberPath(pk: Bytes<32>): MerkleTreePath<10, Bytes<32>>;
+circuit memberKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "c:member:"), sk]);
+}
+circuit requireMember(sk: Bytes<32>): [] {
+  const path = memberPath(memberKey(sk));
+  assert(disclose(path.leaf == memberKey(sk)), "path is not for this member");
+  assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "not a member");
+}
+export circuit act(): [] {
+  const sk = secretKey();
+  requireMember(sk);
+  const nul = persistentHash<Vector<2, Bytes<32>>>([pad(32, "c:nul:"), sk]);
+  assert(!used.member(disclose(nul)), "already acted");
+  used.insert(disclose(nul));
+  acted.increment(1);
+}

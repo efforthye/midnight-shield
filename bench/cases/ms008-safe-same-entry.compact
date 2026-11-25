@@ -1,0 +1,20 @@
+// expect: none
+// note: repeating it writes the same value under the caller's own key
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger listings: Set<Bytes<32>>;
+export ledger repaid: MerkleTree<10, Bytes<32>>;
+export ledger proofs: Map<Bytes<32>, Uint<8>>;
+witness localSk(): Bytes<32>;
+circuit pk(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "d:pk:"), sk]);
+}
+export circuit proveRepaid(app: Bytes<32>, loan: Bytes<32>, path: MerkleTreePath<10, Bytes<32>>): [] {
+  const me = pk(localSk());
+  const key = disclose(persistentHash<Vector<3, Bytes<32>>>([pad(32, "d:app:"), app, me]));
+  assert(listings.member(key), "application is not listed");
+  assert(path.leaf == persistentHash<Vector<3, Bytes<32>>>([pad(32, "d:repaid:"), me, loan]), "record is not yours");
+  assert(repaid.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))), "record is not in the directory");
+  proofs.insert(key, 1);
+}

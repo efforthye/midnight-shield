@@ -1,0 +1,11 @@
+// expect: MS014
+// note: a small value committed with randomness that is made public: anyone can try every vote
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger votes: Map<Bytes<32>, Bytes<32>>;
+witness myVote(): Uint<8>;
+export circuit vote(key: Bytes<32>): [] {
+  const k = disclose(key);
+  votes.insert(k, disclose(persistentCommit<Uint<8>>(myVote(), key)));
+}

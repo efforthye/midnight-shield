@@ -1,0 +1,13 @@
+// expect: none
+// note: the committed value is 32 secret bytes; knowing the randomness does not help guess it
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger owners: Map<Bytes<32>, Bytes<32>>;
+witness ownerSecret(): Bytes<32>;
+export circuit authorize(key: Bytes<32>): [] {
+  const k = disclose(key);
+  assert(!owners.member(k), "key already taken");
+  const binding = persistentCommit<Bytes<32>>(ownerSecret(), key);
+  owners.insert(k, disclose(binding));
+}

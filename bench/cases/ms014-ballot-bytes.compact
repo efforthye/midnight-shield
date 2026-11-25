@@ -1,0 +1,12 @@
+// expect: MS014
+// note: 32 bytes, but a ballot is a small set of choices: still reported
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger votes: Map<Bytes<32>, Bytes<32>>;
+witness ballot(): Bytes<32>;
+export circuit vote(key: Bytes<32>): [] {
+  const k = disclose(key);
+  assert(!votes.member(k), "already voted");
+  votes.insert(k, disclose(persistentCommit<Bytes<32>>(ballot(), key)));
+}

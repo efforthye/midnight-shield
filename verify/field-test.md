@@ -11,9 +11,10 @@ Projects are listed by name only where the maintainers have been told (MeshJS) o
 | After the changes above | 129 | 128 |
 | With the access map rules (MS035, MS036) | 131 | 130 |
 | With the witness constraint rule (MS037) | 147 | 146 |
-| Current version | 139 | 138 |
+| After the first blind test | 139 | 138 |
+| Current version (seed prefixes and seeds printed for the user to save are now low) | 136 | 135 |
 
-The [blind test](blind-test.md) checks the tool on projects it had never seen. Every verdict above is listed in [field-verdicts.md](field-verdicts.md).
+The [blind tests](blind-test.md) check the tool on projects it had never seen. Every verdict above is listed in [field-verdicts.md](field-verdicts.md).
 
 By rule (current): MS037 16 · MS102 15 · MS103 14 · MS120 13 · MS009 12 · MS104 12 · MS013 11 · MS113 8 · MS002 7 · MS118 7 · MS001 6 · MS101 6 · MS007 4 · MS008 4 · MS034 4 · MS019 3 · MS020 3 · MS036 2.
 

@@ -78,6 +78,11 @@ export function secretVariables(tokens: Token[]): Set<string> {
     // a copy or re-encoding of a known secret: every identifier is either that secret or a pass-through
     const idents = rhs.filter((x, k) => x.kind === "ident" && rhs[k - 1]?.value !== ".");
     const secretIdent = idents.find((x) => found.has(x.value) || isSecretName(x.value));
+    // keys.coinPublicKey: a field of a secret object, not a copy of it
+    if (secretIdent) {
+      const k = rhs.indexOf(secretIdent);
+      if (rhs[k + 1]?.value === "." && rhs[k + 2]?.kind === "ident" && !isSecretName(rhs[k + 2].value)) return false;
+    }
     return !!secretIdent && idents.every((x) => x === secretIdent || PASS_THROUGH.test(x.value) || x.value === "await" || x.value === "new");
   };
   for (let pass = 0; pass < 3; pass++) {

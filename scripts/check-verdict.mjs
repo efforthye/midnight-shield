@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 
 const canonical = (v) => (Array.isArray(v) ? `[${v.map(canonical).join(",")}]` : v && typeof v === "object" ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(",")}}` : JSON.stringify(v));
 let failed = 0;
-for (const name of ["field-verdicts.json", "blind-verdicts.json"]) {
+for (const name of ["field-verdicts.json", "blind-verdicts.json", "blind2-verdicts.json"]) {
   const data = JSON.parse(readFileSync(new URL(`../verify/${name}`, import.meta.url), "utf8"));
   const commitments = new Set(data.withheld.map((w) => w.commitment));
   let ok = 0;

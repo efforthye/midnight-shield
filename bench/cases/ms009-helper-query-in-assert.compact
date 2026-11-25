@@ -1,0 +1,15 @@
+// expect: MS009
+// note: a query helper used in an assert: the exported circuit gates on it with an unbound path
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger members: MerkleTree<10, Bytes<32>>;
+export ledger acted: Counter;
+witness memberPath(): MerkleTreePath<10, Bytes<32>>;
+circuit isMember(path: MerkleTreePath<10, Bytes<32>>): Boolean {
+  return members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path)));
+}
+export circuit act(): [] {
+  assert(isMember(memberPath()), "not a member");
+  acted.increment(1);
+}

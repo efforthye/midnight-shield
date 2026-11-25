@@ -68,6 +68,8 @@ function directSecrets(tokens: Token[], open: number): string[] {
     if (/(Env|Var|Name|Path|File|Dir|Label|Prefix|Id|Length|Len|Type|Kind|Url|Key[sS]?Env)$/.test(t.value)) continue;
     // MIN_PASSPHRASE_LENGTH, maxPasswordSize: a rule about a secret, not the secret
     if (t.value.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().split(/[^a-z0-9]+/).some((w) => METADATA_WORDS.has(w))) continue;
+    // SECRET_BYTES in an error message: a size constant (an error would not print raw bytes)
+    if (/^[A-Z0-9_]+_BYTES$/.test(t.value)) continue;
     const next = inner[k + 1]?.value;
     if (next === "(" || next === ":") continue;
     if (next === "." && SAFE_PROPERTIES.has(inner[k + 2]?.value ?? "")) continue;
@@ -220,6 +222,8 @@ function weakWitnessRandomness(tokens: Token[]): RawFinding[] {
   const out: RawFinding[] = [];
   for (let i = 0; i + 2 < tokens.length; i++) {
     if (tokens[i].kind !== "ident" || !/witnesses$/i.test(tokens[i].value)) continue;
+    // deploymentWitnesses, placeholderWitnesses: stand-ins the constructor needs, never run by a circuit
+    if (/deploy|placeholder|dummy|stub|noop/i.test(tokens[i].value)) continue;
     // find the object literal that follows: `witnesses = {`, `witnesses: Witnesses<…> = {`
     let open = -1;
     for (let j = i + 1; j < Math.min(tokens.length, i + 30); j++) {

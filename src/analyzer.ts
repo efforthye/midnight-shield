@@ -110,6 +110,7 @@ function union(infos: Info[]): Info {
   return out;
 }
 
+const ABOUT_A_SECRET = new Set(["path", "file", "filename", "dir", "url", "length", "len", "size", "label", "hint", "placeholder", "prefix", "name", "type", "kind"]);
 const SECRET_WORDS = new Set(["sk", "secret", "seed", "mnemonic", "password", "passphrase", "privkey"]);
 
 /** Does an identifier look like it names a secret? (`secretKey`, `localSk`, `_secret`, `privateKey`) */
@@ -144,6 +145,8 @@ export function isSecretName(name: string): boolean {
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
+  // seedPath, SEED_FILE, secretLength: where a secret is, or how big it is, not the secret
+  if (words.length > 1 && ABOUT_A_SECRET.has(words[words.length - 1])) return false;
   if (words.some((w) => SECRET_WORDS.has(w))) return true;
   // privateKey, privKey, signingKey, spendingKey
   return words.some((w, i) => ["private", "priv", "signing", "spending"].includes(w) && words[i + 1] === "key");
@@ -190,6 +193,10 @@ interface NullifierState {
   negMember: boolean;
   /** the circuit changes ledger state */
   writes: boolean;
+  /** > 0 while the condition of an assert is evaluated */
+  inAssert?: number;
+  /** MS009: paths whose root check is (part of) an assert */
+  gatedPaths?: Set<string>;
   /** MS009: Merkle paths whose root is checked, by variable name */
   checkedPaths: Map<string, Loc>;
   /** MS009: Merkle paths whose `.leaf` is compared in an assert */
@@ -386,6 +393,9 @@ export class Analyzer {
     this.execBlock(body, frame);
 
     for (const [path, loc] of nullifier.checkedPaths) {
+      // a root check that neither gates an assert nor guards a state change only computes a
+      // Boolean (a read-only query like isMember(path)): it authorizes nothing on chain
+      if (!nullifier.writes && !nullifier.gatedPaths?.has(path)) continue;
       if (!nullifier.boundPaths.has(path)) {
         const inline = path.endsWith("()");
         this.report(
@@ -736,13 +746,16 @@ export class Analyzer {
       const isLedger = root !== undefined && !this.lookup(root, frame) && this.resolveName(this.ledgers, root, frame) !== undefined;
       if (isLedger) {
         if (callee.property === "member" && args.some((a) => a.ownpkDirect)) this.ownpkCompare(e.loc, frame);
+        let rootKey: string | undefined;
         if (callee.property === "checkRoot" && e.args[0] && !frame.anchor) {
           let path = findPathRootArg(e.args[0]);
           const argRoot = e.args[0].kind === "ident" ? e.args[0].name : undefined;
           if (!path && argRoot) path = frame.nullifier.rootVars.get(this.pathKey(argRoot, frame));
           if (path) {
             const key = this.pathKey(path, frame);
+            rootKey = key;
             if (!frame.nullifier.checkedPaths.has(key)) frame.nullifier.checkedPaths.set(key, e.loc);
+            if (frame.nullifier.inAssert) (frame.nullifier.gatedPaths ??= new Set()).add(key);
           }
         }
         if (LEDGER_READ_METHODS.has(callee.property)) {
@@ -752,6 +765,8 @@ export class Analyzer {
           out.identity = undefined;
           out.bits = callee.property === "member" ? (args.some(isPrivate) ? 1 : 0) : 0;
           out.ownpkDirect = false;
+          // const ok = tree.checkRoot(…); assert(ok): the result carries which path it checked
+          if (rootKey) out.sources = new Set([...out.sources, `root:${rootKey}`]);
           return out;
         }
         // ledger write: insert, increment, write, push, ...
@@ -780,7 +795,10 @@ export class Analyzer {
     }
     if (name === "pad" || name === "default") return empty();
     if (name === "assert") {
+      frame.nullifier.inAssert = (frame.nullifier.inAssert ?? 0) + 1;
       const infos = e.args.map((a) => this.evalExpr(a, frame));
+      frame.nullifier.inAssert--;
+      for (const src of infos[0]?.sources ?? []) if (src.startsWith("root:")) (frame.nullifier.gatedPaths ??= new Set()).add(src.slice(5));
       if (infos[0]) this.markConstrained(infos[0]);
       if (e.args[0]) this.scanAuthorization(e.args[0], false, frame);
       return empty();
@@ -837,6 +855,8 @@ export class Analyzer {
       // After disclose() the value is public: it carries no secret entropy.
       const sources = new Set([...v.sources].filter((x) => !x.startsWith("w:") && !x.startsWith("p:")));
       sources.add("disclosed");
+      // still made from the caller's witness (a key derived from its secret), though now public
+      if ([...v.sources].some((x) => x.startsWith("w:"))) sources.add("from-witness");
       return { ...v, sources, bits: 0, lowHash: undefined };
     }
 
@@ -882,13 +902,23 @@ export class Analyzer {
     return true;
   }
 
+  /** Whether an expression depends on a parameter of the circuit being analysed. */
+  private fromParam(e: Expr, frame: Frame): boolean {
+    for (const x of walkExpr(e)) {
+      if (x.kind !== "ident") continue;
+      const info = this.lookup(x.name, frame);
+      if (info && [...info.sources].some((s) => s.startsWith("p:"))) return true;
+    }
+    return false;
+  }
+
   /** Whether an expression depends on a witness value (directly, through locals, or through helper calls). */
   private fromWitness(e: Expr, frame: Frame): boolean {
     for (const x of walkExpr(e)) {
       if (x.kind === "call" && x.callee.kind === "ident" && this.resolveName(this.witnesses, x.callee.name, frame)) return true;
       if (x.kind === "ident") {
         const info = this.lookup(x.name, frame);
-        if (info && [...info.sources].some((s) => s.startsWith("w:"))) return true;
+        if (info && [...info.sources].some((s) => s.startsWith("w:") || s === "from-witness")) return true;
       }
     }
     return false;
@@ -907,7 +937,10 @@ export class Analyzer {
           const root = rootIdent(side.object);
           // only a value derived from a witness secret ties the path to the caller;
           // a parameter or a ledger value can be supplied or read by anyone
-          if (root && this.fromWitness(other, frame)) frame.nullifier.boundPaths.add(this.pathKey(root, frame));
+          // in a helper circuit analysed on its own, a parameter is whatever the exported caller passes
+          // (requireMember(sk) with sk = secretKey()), so a leaf bound to one is left to the caller
+          const helperParam = !frame.exported && frame.depth === 0 && this.fromParam(other, frame);
+          if (root && (this.fromWitness(other, frame) || helperParam)) frame.nullifier.boundPaths.add(this.pathKey(root, frame));
         }
       }
       return;

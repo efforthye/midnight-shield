@@ -74,6 +74,8 @@ export function witnessImplementations(source: string): { name: string; body: To
   const out: { name: string; body: Token[]; line: number; col: number }[] = [];
   for (let i = 0; i + 2 < tokens.length; i++) {
     if (tokens[i].kind !== "ident" || !/witnesses$/i.test(tokens[i].value)) continue;
+    // deploymentWitnesses, placeholderWitnesses: stand-ins the constructor needs, never run by a circuit
+    if (/deploy|placeholder|dummy|stub|noop/i.test(tokens[i].value)) continue;
     let open = -1;
     for (let j = i + 1; j < Math.min(tokens.length, i + 30); j++) {
       if (tokens[j].value === "{") {

@@ -104,6 +104,7 @@ function lintSdkTokens(tokens: Token[]): RawFinding[] {
       // only values passed directly count: `log(secret)` or `${secret}`; a secret passed
       // through another call first (`log(publicKeyOf(secret))`) is a derived value
       const secrets: string[] = [];
+      const prefixes: string[] = [];
       let d = 0;
       for (let k = 0; k < inner.length; k++) {
         const tok = inner[k];
@@ -116,7 +117,24 @@ function lintSdkTokens(tokens: Token[]): RawFinding[] {
         if (next === "(") continue; // isSecret(...): a function, not the value
         if (inner[k - 1]?.value === "typeof") continue; // typeof seed: the type, not the value
         if (next === "?" || next === "&&") continue; // process.env.SEED ? 'set' : …: whether it is set, not its value
+        // keys.coinPublicKey, wallet.address: a public field of a secret object
+        if (next === "." && /public|address|^pk$|pk$/i.test(after)) continue;
+        if (/public|address/i.test(tok.value)) continue;
+        // seed.slice(0, 8): a short prefix to tell keys apart, not enough to recover the secret
+        if (next === "." && /^(slice|substring|substr)$/.test(after) && inner[k + 3]?.value === "(" && inner[k + 4]?.value === "0" && inner[k + 5]?.value === "," && Number(inner[k + 6]?.value) <= 12) {
+          if (!prefixes.includes(tok.value)) prefixes.push(tok.value);
+          continue;
+        }
         if (!secrets.includes(tok.value)) secrets.push(tok.value);
+      }
+      if (!secrets.length && prefixes.length) {
+        out.push({
+          ruleId: "MS102",
+          severity: "low",
+          confidence: "medium",
+          loc: loc(t),
+          message: `The first characters of '${prefixes.join("', '")}' are passed to ${t.value}.${tokens[i + 2].value}(). A short prefix does not give the secret away, but it does narrow it down and shows up in shared logs. Log a hash of it (or nothing) to tell keys apart.`,
+        });
       }
       if (secrets.length) {
         // `console.log("SAVE THIS SEED: …")` in a CLI shows a new seed to its owner on purpose. Still worth a
@@ -126,8 +144,11 @@ function lintSdkTokens(tokens: Token[]): RawFinding[] {
           if (tokens[close].value === "(") d++;
           else if (tokens[close].value === ")" && --d === 0) break;
         }
-        const text = tokens.slice(i + 3, close).filter((x) => x.kind === "string").map((x) => x.value).join(" ");
-        const shownOnPurpose = t.value === "console" && /save|back ?up|write (it |this )?down|keep (it|this)|store (it|this)|don'?t lose|you'?ll need/i.test(text);
+        // the call itself, and the console output just before it ("=== New wallet (SAVE THIS) ===")
+        // (only text that is itself printed: a "backup" key name elsewhere in the code says nothing)
+        const printedLines = new Set(tokens.filter((x, k) => x.value === "console" && tokens[k + 1]?.value === "." && x.line < t.line && x.line >= t.line - 4).map((x) => x.line));
+        const text = tokens.filter((x, k) => x.kind === "string" && ((k > i && k < close) || printedLines.has(x.line))).map((x) => x.value).join(" ");
+        const shownOnPurpose = t.value === "console" && /save|back ?up|write (it |this |them )?down|keep (it|this|them)|store (it|this|them)|don'?t lose|you'?ll need|recovery (words|phrase)|exactly as printed/i.test(text);
         out.push({
           ruleId: "MS102",
           severity: shownOnPurpose ? "low" : "high",
@@ -241,6 +262,8 @@ function indexedDbStorage(tokens: Token[]): RawFinding[] {
   for (let i = 1; i + 2 < tokens.length; i++) {
     if (tokens[i].kind !== "ident" || tokens[i + 1].value !== "=" || !["const", "let", "var"].includes(tokens[i - 1].value)) continue;
     for (let j = i + 2; j < tokens.length && j < i + 12 && tokens[j].value !== ";"; j++) if (/privateStateProvider/i.test(tokens[j].value)) providerNames.add(tokens[i].value);
+    // const store = new Map(): kept in memory for the session, not written to the browser
+    if (tokens[i + 2].value === "new" && /^(Map|WeakMap|Set)$/.test(tokens[i + 3]?.value ?? "")) providerNames.add(tokens[i].value);
   }
   for (let i = 0; i + 3 < tokens.length; i++) {
     const t = tokens[i];
@@ -343,7 +366,9 @@ function insecureRandomness(tokens: Token[]): RawFinding[] {
     for (let i = 0; i + 3 < tokens.length; i++) {
       // `if (crypto.getRandomValues) … else Math.random()`: a fallback for environments without crypto
       const fallback = (k: number) => tokens.slice(Math.max(0, k - 40), k).some((t) => t.value === "getRandomValues" || t.value === "randomBytes") && tokens.slice(Math.max(0, k - 30), k).some((t) => t.value === "else");
-      const direct = isMathRandom(i) && !fallback(i);
+      // xs.sort(() => Math.random() - 0.5): shuffling an order, not making a value
+      const shuffle = (k: number) => tokens.slice(Math.max(0, k - 7), k).some((t, m, arr) => t.value === "sort" && arr[m + 1]?.value === "(");
+      const direct = isMathRandom(i) && !fallback(i) && !shuffle(i);
       const viaName = pass === 1 && tokens[i].kind === "ident" && tainted.has(tokens[i].value) && tokens[i + 1]?.value !== "=" && tokens[i + 1]?.value !== ":" && tokens[i - 1]?.value !== "const" && tokens[i - 1]?.value !== "let" && tokens[i - 1]?.value !== "function";
       // (`temperature: number` is a parameter or an object key that happens to share the tainted name, not the value)
       if (!(pass === 0 ? direct : viaName)) continue;

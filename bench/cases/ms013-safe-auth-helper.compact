@@ -1,0 +1,20 @@
+// expect: none
+// note: the admin is authenticated by a helper; the Boolean is the admin's own confirmation
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger adminPk: Bytes<32>;
+export ledger open: Boolean;
+witness secretKey(): Bytes<32>;
+witness confirmed(): Boolean;
+circuit adminKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "h:admin:"), sk]);
+}
+circuit requireAdmin(): [] {
+  assert(disclose(adminKey(secretKey())) == adminPk, "only the admin");
+}
+export circuit setOpen(): [] {
+  requireAdmin();
+  assert(confirmed(), "not confirmed");
+  open = true;
+}

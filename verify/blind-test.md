@@ -34,10 +34,31 @@ Each change has a look-alike case in the regression suite, so it stays in place.
 
 Real issues were found in 17 of the 30 projects, among them owner checks that compare the public owner id with a parameter (MS036), Merkle paths not tied to the caller (MS009), and witness values written to state unchecked (MS002).
 
-## Next blind test
+## Second blind test
 
-The next sample is already fixed: the remaining 55 candidates of the same shuffled list, in order, are committed to by hash (`nextSampleCommitment`). The next run takes the first 30 of them that contain Compact code, scans them once with the current version, and publishes the result the same way.
+The second sample was fixed before the first changes were made: the remaining candidates of the same shuffled list, committed to by hash (`nextSampleCommitment` in [blind-verdicts.json](blind-verdicts.json)). The first 30 of them that contain Compact code were scanned once, with the version of 2026-11-25, and every medium-or-worse finding was checked against the source. Each verdict is committed to in [blind2-verdicts.json](blind2-verdicts.json).
+
+Real issues were found in 18 of the 30 projects, among them escrow circuits anyone could release or refund (MS036), a vault total and payout root any caller could set (MS034), private state keys made from a public key (MS120), and a category commitment whose randomness is public (MS004).
+
+What it surfaced, and what changed (each with look-alike regression cases, including the variants that must still be reported):
+
+| Pattern | Now |
+| --- | --- |
+| Public keys read from an object of secret keys, seed file paths | are not secrets (MS102) |
+| A short prefix of a seed in a log | is reported as low |
+| A new seed printed for the user to save | is reported as low, also when the note is printed just before it |
+| Deployment-only stand-in witnesses (`deploymentWitnesses`) | are not weak implementations (MS113, MS121) |
+| A helper circuit that binds the leaf to its own parameter | is left to the caller (MS009) |
+| A membership query that gates nothing | is not reported; used in an assert elsewhere, it is (MS009) |
+| A key derived from the caller's secret and passed through `disclose()` | still makes a repeated write idempotent (MS008) |
+| A Boolean witness asserted after the caller proved its identity against the ledger | is that party's statement (MS013); an `if`, a one-branch check or a check against a parameter is still reported |
+| A commitment to a 32-byte secret with public randomness | is a keyed binding (MS014); small values are still reported |
+| An in-memory `Map` | is not browser storage (MS104) |
+| `Math.random()` as a sort comparator | makes no value (MS105) |
+| `SECRET_BYTES` in an error message | is a size (MS110) |
+
+The next blind sample will be drawn and fixed by hash before it is run, in the same way.
 
 ## Checking the verdicts
 
-[blind-verdicts.json](blind-verdicts.json) holds a SHA-256 commitment for each finding of the scan (the full row: repository, commit, file, line, rule, verdict, reason, and a salt). Rows are revealed once the projects have been told, and `node scripts/check-verdict.mjs` recomputes them.
+[blind-verdicts.json](blind-verdicts.json) and [blind2-verdicts.json](blind2-verdicts.json) hold a SHA-256 commitment for each finding of each scan (the full row: repository, commit, file, line, rule, verdict, reason, and a salt). Rows are revealed once the projects have been told, and `node scripts/check-verdict.mjs` recomputes them.

@@ -1,0 +1,15 @@
+// expect: none
+// note: the attester has proved who it is, so the Boolean is its own statement
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger attesterCommit: Bytes<32>;
+export ledger released: Boolean;
+witness attesterSecret(): Bytes<32>;
+witness deliveryOk(): Boolean;
+export circuit attest(): [] {
+  assert(!released, "already released");
+  assert(persistentHash<Vector<2, Bytes<32>>>([pad(32, "e:attester:"), attesterSecret()]) == attesterCommit, "not the attester");
+  assert(deliveryOk(), "condition not met");
+  released = true;
+}
