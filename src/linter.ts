@@ -1,3 +1,4 @@
+import { accessMap, checkClaimedIdentity, checkInconsistentGuards, type CircuitAccess } from "./access.js";
 import { Analyzer, type DisclosureEvent, type ImportResolver, type RawFinding } from "./analyzer.js";
 import type { Program } from "./ast.js";
 import { pragmaFix, type TextEdit } from "./fixes.js";
@@ -185,6 +186,11 @@ function analyze(source: string, file: string, options: LintOptions): Analysis {
   // an owner field anyone can overwrite is MS011's finding; MS034 would say the same thing
   const ownerWrites = new Set(raw.filter((f) => f.ruleId === "MS011").map((f) => `${f.loc.line}:${f.loc.col}`));
   for (let i = raw.length - 1; i >= 0; i--) if (raw[i].ruleId === "MS034" && ownerWrites.has(`${raw[i].loc.line}:${raw[i].loc.col}`)) raw.splice(i, 1);
+  // MS035 (a field guarded in one circuit, open in another) at a write that MS011 or MS034 already reports says less
+  const reportedWrites = new Set(raw.filter((f) => f.ruleId === "MS011" || f.ruleId === "MS034").map((f) => f.loc.line));
+  const imports = { resolver: options.resolver, file: options.absolutePath };
+  raw.push(...checkClaimedIdentity(program, raw, imports));
+  raw.push(...checkInconsistentGuards(program, raw, imports).filter((f) => !reportedWrites.has(f.loc.line)));
   for (const rule of options.plugins ?? []) raw.push(...runCustomRule(rule, file, source, program));
   return { program, analyzer, raw };
 }
@@ -250,6 +256,23 @@ export interface DisclosureEntry extends DisclosureEvent {
 }
 
 /** List every point where data becomes public in a file (the disclosure map). */
+export interface AccessEntry extends CircuitAccess {
+  file: string;
+  /** rules reported inside this circuit's lines (the circuit itself, not its helpers) */
+  findings: string[];
+}
+
+/** The access map of a Compact file: who can call each exported circuit, what it checks and what it changes. */
+export function mapAccess(source: string, file = "contract.compact", options: LintOptions = {}): AccessEntry[] {
+  if (isSdkFile(file)) return [];
+  const { program, raw } = analyze(source, file, options);
+  if (!program) return [];
+  return accessMap(program, raw, { resolver: options.resolver, file: options.absolutePath }).map((c) => {
+    const lines = new Set([...c.guards.map((g) => g.line), ...c.writes.map((w) => w.line), ...c.tokens.map((t) => t.line)]);
+    return { ...c, file, findings: [...new Set(raw.filter((f) => lines.has(f.loc.line) && f.ruleId !== "MS000" && f.ruleId !== "MS033").map((f) => f.ruleId))].sort() };
+  });
+}
+
 export function mapDisclosures(source: string, file = "contract.compact", options: LintOptions = {}): DisclosureEntry[] {
   const { analyzer, raw } = analyze(source, file, options);
   if (!analyzer) return [];

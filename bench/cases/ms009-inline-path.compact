@@ -1,0 +1,16 @@
+// expect: MS009
+// note: the path is used inline, so its leaf is never checked
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger members: MerkleTree<10, Bytes<32>>;
+export ledger n: Counter;
+export ledger used: Set<Bytes<32>>;
+witness path(): MerkleTreePath<10, Bytes<32>>;
+witness secretKey(): Bytes<32>;
+export circuit act(): [] {
+  assert(members.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path()))), "not a member");
+  const nul = disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:nul:"), secretKey()]));
+  assert(!used.member(nul), "used");
+  used.insert(nul);
+}

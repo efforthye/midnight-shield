@@ -1,0 +1,19 @@
+// expect: MS036
+// source: a public staking contract template (report pending)
+// note: minimal reproduction. The "owner only" check compares the public ownerId with a parameter, so anyone can pass it.
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger ownerId: Uint<32>;
+export ledger rewardRateValue: Uint<64>;
+export ledger nonce: Counter;
+
+constructor(initialOwnerId: Uint<32>) {
+  ownerId = disclose(initialOwnerId);
+}
+
+export circuit updateRewardRate(callerId: Uint<32>, newRewardRate: Uint<64>): [] {
+  assert(ownerId == disclose(callerId), "Only contract owner can update reward rate");
+  rewardRateValue = disclose(newRewardRate);
+  nonce.increment(1);
+}

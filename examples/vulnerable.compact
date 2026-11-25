@@ -27,6 +27,10 @@ export ledger round: Uint<32>;
 export ledger phase: Uint<8>;
 export ledger reserve: Field;
 export ledger price: Uint<64>;
+export ledger ownerHash: Bytes<32>;
+export ledger fee: Uint<64>;
+export ledger adminId: Uint<32>;
+export ledger limit: Uint<64>;
 
 witness secretKey(): Bytes<32>;
 witness myChoice(): Uint<8>;
@@ -236,6 +240,22 @@ export circuit setPrice(p: Uint<64>): [] {
 
 export circuit borrowAgainst(collateral: Uint<64>, amount: Uint<64>): [] {
   assert(disclose(collateral) * price >= disclose(amount), "undercollateralized");
+}
+
+// MS035: setFee() checks the owner, resetFee() changes the same field with no check.
+export circuit setFee(f: Uint<64>): [] {
+  assert(persistentHash<Vector<2, Bytes<32>>>([pad(32, "example:owner:"), secretKey()]) == ownerHash, "not the owner");
+  fee = disclose(f);
+}
+
+export circuit resetFee(): [] {
+  fee = 0;
+}
+
+// MS036: adminId is public, so anyone can pass it as callerId.
+export circuit setLimit(callerId: Uint<32>, l: Uint<64>): [] {
+  assert(adminId == disclose(callerId), "only the admin");
+  limit = disclose(l);
 }
 
 // MS015: declared but never used.

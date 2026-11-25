@@ -1,0 +1,14 @@
+// expect: MS035
+// note: the guard is in an imported module, the second writer has none
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+import "./Ownable" prefix Ownable_;
+export ledger paused: Boolean;
+export circuit pause(): [] {
+  Ownable_assertOnlyOwner();
+  paused = true;
+}
+export circuit unpause(): [] {
+  paused = false;
+}

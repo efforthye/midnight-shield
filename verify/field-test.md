@@ -33,10 +33,11 @@ Also changed: an `assertOnlyOwner()` helper called from twelve circuits was repo
 | | Findings (medium and up) | Real issues | False positives |
 | --- | ---: | ---: | ---: |
 | After the fixes above | 129 | 128 | 1 (the invalid file) |
+| With the access map rules (MS035, MS036) | 131 | 130 | 1 (the invalid file) |
 
 This second number is measured on the same code the fixes came from, so it shows the fixes work, not how the tool does on new code. The next field test, on projects not in this set, will say that.
 
-By rule (current): MS102 15 · MS103 14 · MS120 13 · MS009 12 · MS104 12 · MS013 11 · MS113 8 · MS002 7 · MS118 7 · MS001 6 · MS101 6 · MS007 4 · MS008 4 · MS034 4 · MS019 3 · MS020 3.
+By rule (current): MS102 15 · MS103 14 · MS120 13 · MS009 12 · MS104 12 · MS013 11 · MS113 8 · MS002 7 · MS118 7 · MS001 6 · MS101 6 · MS007 4 · MS008 4 · MS034 4 · MS019 3 · MS020 3 · MS036 2.
 
 Real issues were found in 25 of the 36 projects. The ones that matter most:
 
@@ -45,6 +46,21 @@ Real issues were found in 25 of the 36 projects. The ones that matter most:
 - A token ledger that publishes raw secret keys as balance keys (report pending): MS007.
 - Allowlist roots and pause flags that any caller can overwrite (reports pending): MS034.
 - Wallet seeds and private state written to logs and `localStorage`, hardcoded seeds in scripts, zero-byte fallbacks for secrets: MS102, MS103, MS104, MS113.
+
+## Access map on the same projects
+
+`--print access` classifies every exported circuit by who can call it. Across the 36 projects (426 exported circuits outside modules) and the official corpus (582, test mocks included):
+
+| | Third-party projects | Official examples and OpenZeppelin |
+| --- | ---: | ---: |
+| Checks the caller | 117 | 73 |
+| Only checks that anyone can pass (BYPASSABLE) | 23 | 0 |
+| Calls imported code that could not be read | 0 | 39 |
+| Open to anyone | 286 | 470 |
+
+Every BYPASSABLE circuit was checked against the source: all 23 are real (ownPublicKey() owner checks behind an imported Ownable module, witness results, unbound Merkle paths, and two "owner only" checks that compare the public owner id with a parameter, now MS036). Reading imported modules matters here: eight of the 23 call an `assertOnlyOwner()` whose weakness is only visible inside the module.
+
+MS035 (a field one circuit protects and another changes with no check) found nothing in these projects. Its benchmark cases and the official corpus show no false positives either; it is kept because the pattern (a later "reset" or "migrate" circuit that forgot the check) is a classic one on other chains.
 
 ## Why the official code has no high findings
 

@@ -122,7 +122,7 @@ describe("markdown report", () => {
   it("has a summary, a findings table and details", () => {
     const md = formatMarkdown(lintSource(VULNERABLE, "v.compact"), 1, { date: "2026-11-20" });
     assert.match(md, /^# Midnight Shield report/);
-    assert.match(md, /\| 🟣 critical \| 1 \|/);
+    assert.match(md, /\| 🟣 critical \| 2 \|/);
     assert.match(md, /### 1\. MS001 own-public-key-auth/);
     assert.match(md, /```compact/);
   });

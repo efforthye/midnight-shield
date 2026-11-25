@@ -367,10 +367,13 @@ export class Analyzer {
 
     for (const [path, loc] of nullifier.checkedPaths) {
       if (!nullifier.boundPaths.has(path)) {
+        const inline = path.endsWith("()");
         this.report(
           "MS009",
           loc,
-          `The root of Merkle path '${path}' is checked, but nothing asserts that '${path}.leaf' belongs to the caller. Merkle paths are public, so anyone can submit another member's path and pass. Add e.g. assert(${path}.leaf == deriveLeaf(secretKey())).`,
+          inline
+            ? `The root of the Merkle path returned by '${path}' is checked, but the path is used inline, so nothing can assert that its leaf belongs to the caller. Merkle paths are public, so anyone can submit another member's path and pass. Store it first and bind it: const p = ${path}; assert(p.leaf == deriveLeaf(secretKey())).`
+            : `The root of Merkle path '${path}' is checked, but nothing asserts that '${path}.leaf' belongs to the caller. Merkle paths are public, so anyone can submit another member's path and pass. Add e.g. assert(${path}.leaf == deriveLeaf(secretKey())).`,
         );
       }
     }
@@ -1068,8 +1071,14 @@ export class Analyzer {
 function findPathRootArg(e: Expr): string | undefined {
   if (e.kind === "call" && e.callee.kind === "ident") {
     if (e.callee.name === "disclose" && e.args[0]) return findPathRootArg(e.args[0]);
-    if (/^merkleTreePathRoot/.test(e.callee.name) && e.args[0]) return rootIdent(e.args[0]);
+    if (/^merkleTreePathRoot/.test(e.callee.name) && e.args[0]) return rootIdent(e.args[0]) ?? inlineCall(e.args[0]);
   }
+  return undefined;
+}
+
+/** `merkleTreePathRoot(path())`: the path comes straight from a call, so nothing can check its leaf. */
+function inlineCall(e: Expr): string | undefined {
+  if (e.kind === "call" && e.callee.kind === "ident") return e.callee.name === "disclose" && e.args[0] ? inlineCall(e.args[0]) : `${e.callee.name}()`;
   return undefined;
 }
 

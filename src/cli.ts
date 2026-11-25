@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 import { CONFIG_FILE, ConfigError, DEFAULT_CONFIG, loadConfig, withPreset, type Config, type PresetName } from "./config.js";
 import { applyEdits } from "./fixes.js";
 import { createBaseline, type Finding, type LintOptions } from "./linter.js";
-import { lintFiles, listTargetFiles, mapDisclosuresInFiles, readBaseline } from "./node.js";
+import { lintFiles, listTargetFiles, mapAccessInFiles, mapDisclosuresInFiles, readBaseline } from "./node.js";
 import { loadPlugins } from "./plugin-loader.js";
 import { PluginError, type CustomRule } from "./plugins.js";
-import { VERSION, formatDisclosures, formatDisclosuresMarkdown, formatJson, formatMarkdown, formatSarif, formatText } from "./reporters.js";
+import { VERSION, formatAccess, formatAccessMarkdown, formatDisclosures, formatDisclosuresMarkdown, formatJson, formatMarkdown, formatSarif, formatText } from "./reporters.js";
 import { badgeJson } from "./badge.js";
 import { createSnapshot, diffIsEmpty, diffSnapshots, formatDiffMarkdown, formatDiffText, readSnapshot } from "./privacy-diff.js";
 import { CONFIDENCE_ORDER, RULES, SUPPORTED_LANGUAGE, RULES_BY_ID, SEVERITY_ORDER, type Confidence, type Severity } from "./rules.js";
@@ -32,6 +32,9 @@ Output:
   -o, --output <file>                      Write the report to a file
       --print disclosures                  Print the disclosure map: every point where
                                            data becomes public, and what flows there
+      --print access                       Print the access map: who can call each
+                                           exported circuit, what it checks, what it
+                                           changes and which tokens it moves
       --no-code-frame                      Do not print source lines
       --no-suggestions                     Do not print suggested fixes
       --no-color                           Disable colored output
@@ -242,7 +245,7 @@ async function main(argv: string[]): Promise<void> {
         break;
       case "--print":
         print = value();
-        if (print !== "disclosures") fail('--print supports "disclosures"');
+        if (print !== "disclosures" && print !== "access") fail('--print supports "disclosures" and "access"');
         break;
       case "--badge":
         badge = value();
@@ -321,6 +324,14 @@ async function main(argv: string[]): Promise<void> {
   let findings: Finding[];
   try {
     fileCount = listTargetFiles(paths, options.ignore, process.cwd(), options.sdk).length;
+    if (print === "access") {
+      const entries = mapAccessInFiles(paths, options);
+      const out =
+        format === "json" ? JSON.stringify({ tool: "midnight-shield", version: VERSION, access: entries }, null, 2) : format === "markdown" ? formatAccessMarkdown(entries) : formatAccess(entries, { color: color && !output });
+      if (output) writeFileSync(output, out + "\n");
+      else process.stdout.write(out + "\n");
+      return;
+    }
     if (print === "disclosures") {
       const entries = mapDisclosuresInFiles(paths, options);
       const out =

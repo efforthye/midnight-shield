@@ -1,0 +1,12 @@
+// expect: MS036
+// note: through a local constant
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger controllerKey: Bytes<32>;
+export ledger limit: Uint<64>;
+export circuit setLimit(me: Bytes<32>, l: Uint<64>): [] {
+  const caller = disclose(me);
+  assert(caller == controllerKey, "not authorized");
+  limit = disclose(l);
+}

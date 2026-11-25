@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Access map** (`--print access`, also JSON and Markdown): for every exported circuit, who can call it, which ledger fields it changes, which tokens it moves, and every check on the way, including checks in helper circuits and in imported modules (the module is read to see what `assertOnlyOwner()` really checks). Checks the prover controls (ownPublicKey(), a witness result, an unbound Merkle path, a stored id compared with a parameter) are marked, and a circuit with only such checks is shown as BYPASSABLE. The Compact counterpart of Slither's `vars-and-auth` printer.
+- **MS035 inconsistent-guard**: one exported circuit checks the caller before changing a single-value ledger field, another overwrites the same field with no check (Slither's `protected-vars`, with the guarded circuit as the annotation).
+- **MS036 claimed-identity**: an owner check that compares a stored id with a circuit parameter. The ledger is public, so anyone can pass the stored id. Found in a public staking template.
 - **MS121 weak-witness-implementation**: the contract and the DApp are read together. A witness the contract uses as commitment randomness or as a secret key, implemented in the DApp with zeros, a clock, `Math.random()` or a constant, is reported whatever its name.
 - **MS034 untrusted-state-dependency**: a ledger field that any caller can set in one circuit, trusted by another circuit in a check or a token transfer (the oracle-price pattern).
 - **Suppression reasons.** `// shield-disable-next-line MS005 -- why` keeps the reason with the finding: `--show-suppressed` prints it, JSON has `suppressionReason`, SARIF has the suppression's `justification`. `--require-suppression-reason` (or `"requireSuppressionReason": true`) ignores comments without one.
@@ -16,6 +19,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- MS009 missed a Merkle path used inline (`merkleTreePathRoot(path())`), which can never be bound to the caller.
+- README and pitch deck no longer compare Midnight Shield with other Midnight community tools.
 - False positives found in the field test: MS007 on numbers named like seeds (`seedTreasury`), MS105 on `Math.random()` fallbacks and on adjectives (`randomHex`), MS103 on placeholder keys, MS113 on deploy and end-to-end script stubs, MS028 when funds leave with `sendImmediateShielded`, MS004 on two calls of the same randomness witness, MS008 on writes keyed by the caller's secret.
 - MS001 reports a helper such as `assertOnlyOwner()` once, with the number of call sites, instead of once per call.
 - MS102 reports a console line that asks the user to save a new seed as low severity; `logger` calls stay high.

@@ -1,4 +1,5 @@
-import type { DisclosureEntry, Finding } from "./linter.js";
+import type { GuardKind, Who } from "./access.js";
+import type { AccessEntry, DisclosureEntry, Finding } from "./linter.js";
 import { suggestionDiff } from "./suggest.js";
 import { RULES, SEVERITY_ORDER, ruleDocUrl, type RuleMeta, type Severity } from "./rules.js";
 
@@ -334,5 +335,99 @@ export function formatDisclosuresMarkdown(entries: DisclosureEntry[]): string {
     const prot = PROTECTION_LABEL[d.protection] + (d.secretBits !== undefined && d.protection !== "public" ? ` (${plural(d.secretBits, "bit")})` : "");
     out.push(`| \`${d.file}\` | ${d.loc.line} | ${mdEscape(d.circuit)} | ${mdEscape(describeVia(d))} | ${mdEscape(describeSources(d))} | ${prot} | ${d.findings.join(", ")} |`);
   }
+  return out.join("\n");
+}
+
+const GUARD_SHORT: Record<GuardKind, string> = {
+  secret: "secret",
+  "allow-list": "allow-list",
+  signature: "signature",
+  merkle: "Merkle proof",
+  "caller-key": "ownPublicKey()",
+  "claimed-id": "claimed id",
+  "witness-result": "witness result",
+  imported: "imported",
+  "one-time": "one-time",
+  state: "state",
+  input: "inputs",
+};
+
+const WHO_LABEL: Record<Who, string> = {
+  restricted: "restricted",
+  imported: "unread import",
+  bypassable: "BYPASSABLE",
+  anyone: "anyone",
+};
+
+/** Caller checks first, grouped by kind with their lines; one-time, state and input checks once, at the end. */
+function describeGuards(a: AccessEntry): string {
+  const groups = new Map<string, string[]>();
+  for (const g of a.guards) {
+    if (g.kind === "state" || g.kind === "input" || g.kind === "one-time") continue;
+    const label = g.kind === "imported" && g.callee ? `${g.callee}()` : GUARD_SHORT[g.kind];
+    const at = `${g.line}${g.bypass ? ` (${g.bypass})` : ""}`;
+    const list = groups.get(label) ?? [];
+    if (!list.includes(at)) list.push(at);
+    groups.set(label, list);
+  }
+  const parts = [...groups].map(([label, at]) => `${label} l.${at.join(", ")}`);
+  if (a.guards.some((g) => g.kind === "one-time")) parts.push("one-time");
+  if (a.guards.some((g) => g.kind === "state")) parts.push("state");
+  if (a.guards.some((g) => g.kind === "input")) parts.push("inputs");
+  return parts.join(", ") || "-";
+}
+
+const uniq = (xs: string[]) => [...new Set(xs)];
+const accessWrites = (a: AccessEntry) => uniq(a.writes.map((w) => w.field)).join(", ") || "-";
+const accessTokens = (a: AccessEntry) => uniq(a.tokens.map((t) => t.op)).join(", ") || "-";
+
+function accessSummary(entries: AccessEntry[]): string {
+  const count = (w: Who) => entries.filter((e) => e.who === w).length;
+  const openActing = entries.filter((e) => e.who === "anyone" && (e.writes.length || e.tokens.some((t) => !t.op.startsWith("receive")))).length;
+  return (
+    `${plural(entries.length, "exported circuit")}: ${count("restricted")} check the caller, ${count("imported")} call imported code that could not be read (it may check the caller), ` +
+    `${count("bypassable")} have only checks anyone can pass, ${count("anyone")} are open to anyone (${openActing} of them change state or move tokens).`
+  );
+}
+
+export function formatAccess(entries: AccessEntry[], options: { color?: boolean } = {}): string {
+  const color = options.color ?? true;
+  const c = (code: string, s: string) => (color ? code + s + RESET : s);
+  const lines: string[] = [];
+  let currentFile = "";
+  for (const a of entries) {
+    if (a.file !== currentFile) {
+      if (currentFile) lines.push("");
+      lines.push(c(BOLD + "\x1b[4m", a.file));
+      lines.push(c(DIM, `  ${"circuit".padEnd(22)}${"who can call".padEnd(16)}${"changes".padEnd(26)}${"tokens".padEnd(16)}checks`));
+      currentFile = a.file;
+    }
+    const acts = a.writes.length > 0 || a.tokens.length > 0;
+    const who =
+      a.who === "restricted" ? c("\x1b[32m", WHO_LABEL.restricted.padEnd(16))
+      : a.who === "bypassable" ? c("\x1b[31m", WHO_LABEL.bypassable.padEnd(16))
+      : a.who === "imported" ? c("\x1b[33m", WHO_LABEL.imported.padEnd(16))
+      : acts ? c("\x1b[31m", "anyone".padEnd(16)) : c(DIM, "anyone".padEnd(16));
+    const name = (a.module ? `${a.name} (module)` : a.name).slice(0, 21).padEnd(22);
+    const flags = a.findings.length ? c("\x1b[33m", `  ⚠ ${a.findings.join(", ")}`) : "";
+    lines.push(`  ${name}${who}${accessWrites(a).slice(0, 25).padEnd(26)}${accessTokens(a).slice(0, 15).padEnd(16)}${describeGuards(a)}${flags}`);
+  }
+  if (!entries.length) lines.push("No exported circuits in these files.");
+  else {
+    lines.push("");
+    lines.push(accessSummary(entries));
+    lines.push(c(DIM, "BYPASSABLE: every caller check is one the prover controls (MS001 ownPublicKey(), MS009 unbound Merkle path, MS013 witness result, MS036 a stored id compared with a parameter)."));
+  }
+  return lines.join("\n");
+}
+
+export function formatAccessMarkdown(entries: AccessEntry[]): string {
+  const out = ["# Access map", "", "Who can call each exported circuit, what it checks, which ledger fields it changes and which tokens it moves.", ""];
+  out.push("| File | Circuit | Who can call | Changes | Tokens | Checks | Findings |");
+  out.push("| --- | --- | --- | --- | --- | --- | --- |");
+  for (const a of entries) {
+    out.push(`| \`${a.file}\` | ${mdEscape(a.module ? `${a.name} (module)` : a.name)} | ${WHO_LABEL[a.who]} | ${mdEscape(accessWrites(a))} | ${mdEscape(accessTokens(a))} | ${mdEscape(describeGuards(a))} | ${a.findings.join(", ")} |`);
+  }
+  if (entries.length) out.push("", accessSummary(entries));
   return out.join("\n");
 }

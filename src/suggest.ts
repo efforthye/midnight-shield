@@ -311,6 +311,25 @@ export function suggestFix(ruleId: string, message: string, line: string): Sugge
         note: "Or verify the value where it is used (a signature checked in the circuit, or a Merkle proof bound to the caller).",
       };
     }
+    case "MS035": {
+      const m = message.match(/^'([^']+)' .*? before changing '([^']+)', but '([^']+)' overwrites/);
+      const [guarded, field, open] = [m?.[1], m?.[2], m?.[3]];
+      return {
+        before,
+        after: [`${ind}// the same caller check as in '${guarded ?? "the guarded circuit"}', before changing ${field ?? "the field"}`, `${ind}assert(deriveId(secretKey()) == ownerId, "not authorized");`, line],
+        note: open ? `Or, if '${open}' is only a building block, stop exporting it (rename it to _${open} and call it from a circuit that checks the caller).` : undefined,
+      };
+    }
+    case "MS036": {
+      const m = message.match(/comparing '([^']+)' with the parameter '([^']+)'/);
+      const field = m?.[1] ?? "ownerId";
+      const param = m?.[2];
+      return {
+        before,
+        after: [`${ind}assert(persistentHash<Vector<2, Bytes<32>>>([pad(32, "myapp:owner:"), secretKey()]) == ${field}, "not authorized");`],
+        note: `Store the hash of a secret in '${field}' (set it in the constructor from the same hash)${param ? ` and drop the '${param}' parameter` : ""}. Only whoever knows the secret can produce a proof that passes.`,
+      };
+    }
     case "MS101": {
       const after = line.replace(/(["'])(?:https?|wss?):\/\/[^"']*\1/, 'process.env.MIDNIGHT_PROOF_SERVER ?? "http://localhost:6300"');
       return after === line ? undefined : { before, after: [after], note: "Run the proof server on the user's own machine." };

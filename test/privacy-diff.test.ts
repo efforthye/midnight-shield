@@ -53,7 +53,7 @@ describe("status badge", () => {
     assert.deepEqual([badgeJson([]).message, badgeJson([]).color], ["verified", "brightgreen"]);
     const b = badgeJson(lintSource(readFileSync("examples/vulnerable.compact", "utf8"), "v.compact"));
     assert.equal(b.schemaVersion, 1);
-    assert.match(b.message, /^1 critical, \d+ high \+$/);
+    assert.match(b.message, /^2 critical, \d+ high \+$/);
     assert.equal(b.color, "red");
     assert.match(b.logoSvg, /^<svg/);
   });

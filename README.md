@@ -10,7 +10,7 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 [![CI](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
-![Rules](https://img.shields.io/badge/rules-55-purple)
+![Rules](https://img.shields.io/badge/rules-57-purple)
 ![Tests](https://img.shields.io/badge/tests-367%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
@@ -270,6 +270,8 @@ npx midnight-shield contracts/ --format json                    # scripts and AI
 | [MS032](docs/rules/MS032.md) | `unused-local` | ⚪ Info | high | A local constant is computed but never used |
 | [MS033](docs/rules/MS033.md) | `unsupported-language-version` | 🔵 Low | high | The pragma asks for a Compact version outside the tested range, so new syntax may be misread |
 | [MS034](docs/rules/MS034.md) | `untrusted-state-dependency` | 🔴 High | medium | A ledger field any caller can set is trusted by another circuit in a check or a token transfer |
+| [MS035](docs/rules/MS035.md) | `inconsistent-guard` | 🔴 High | medium | One circuit checks the caller before changing a field, another overwrites the same field with no check |
+| [MS036](docs/rules/MS036.md) | `claimed-identity` | 🟣 Critical | medium | An "owner check" compares a stored id with a parameter; the ledger is public, so anyone can pass the stored id |
 
 **DApp code (TypeScript / JavaScript)**
 
@@ -312,6 +314,33 @@ npx midnight-shield contracts/ --print disclosures
 <img src="https://raw.githubusercontent.com/efforthye/midnight-shield/main/docs/assets/disclosures.png" alt="Disclosure map" width="820">
 
 `RAW` means private data is published as is. That is sometimes intended (a public balance), but every `RAW` row deserves a second look. The map is also available as JSON and Markdown (`--format json|markdown`), in the playground, and in VS Code.
+
+## Access map
+
+The access map answers the first question of every audit: who can call each circuit, and what can they change?
+
+```bash
+npx midnight-shield contracts/ --print access
+```
+
+```text
+contracts/staking.compact
+  circuit               who can call    changes                   tokens          checks
+  stake                 BYPASSABLE      stakedBalances, totalStak -               witness result l.170 (MS013)  ⚠ MS013
+  updateRewardRate      BYPASSABLE      rewardRateValue, nonce    -               claimed id l.267 (MS036)  ⚠ MS036
+  setFee                restricted      fee                       -               secret l.21
+  resetFee              anyone          fee                       -               -  ⚠ MS035
+```
+
+For every exported circuit it lists the ledger fields it changes, the tokens it sends, mints or receives, and every check on the way, including checks in helper circuits and in imported modules (the module is read to see what `assertOnlyOwner()` really checks). Each check is classified:
+
+| Check | Means |
+| --- | --- |
+| `secret`, `allow-list`, `signature`, `Merkle proof` | Ties the call to the caller |
+| `ownPublicKey()`, `witness result`, `claimed id`, unbound `Merkle proof` | Looks like a caller check, but the prover controls it (MS001, MS013, MS036, MS009) |
+| `one-time`, `state`, `inputs` | Limits how often, when or how much, not who |
+
+**BYPASSABLE** means every caller check on the circuit is one anyone can pass. Two rules are built on the map: MS035 (a field one circuit protects and another changes freely) and MS036 (an owner check that compares with a parameter). JSON and Markdown are available with `--format json|markdown`.
 
 ## How it works
 
@@ -463,7 +492,7 @@ Accuracy is measured two ways.
 
 **Field test on third-party code.** 36 public Midnight projects found through GitHub search, scanned with default settings, every medium-or-worse finding checked against the source. On the first scan, before any change for this test, **121 of 134 findings were real issues (90% precision)**. The 13 false positives were fixed; each one and its fix is listed in [verify/field-test.md](verify/field-test.md), along with why the official examples and OpenZeppelin code show so few findings (some patterns, such as Boolean witnesses, never occur there).
 
-**Labeled benchmark.** 170 labeled files: 118 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
+**Labeled benchmark.** 180 labeled files: 124 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
 
 | Rule | Expected findings | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -473,7 +502,7 @@ Accuracy is measured two ways.
 | MS004 | 4 | 4 | 0 | 0 | 100% | 100% |
 | MS007 | 7 | 7 | 0 | 0 | 100% | 100% |
 | MS008 | 5 | 5 | 0 | 0 | 100% | 100% |
-| MS009 | 6 | 6 | 0 | 0 | 100% | 100% |
+| MS009 | 7 | 7 | 0 | 0 | 100% | 100% |
 | MS011 | 5 | 5 | 0 | 0 | 100% | 100% |
 | MS013 | 10 | 10 | 0 | 0 | 100% | 100% |
 | MS014 | 3 | 3 | 0 | 0 | 100% | 100% |
@@ -482,7 +511,7 @@ All rules together:
 
 | Rule | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| **All** | **118** | **0** | **0** | **100%** | **100%** |
+| **All** | **124** | **0** | **0** | **100%** | **100%** |
 
 CI also compiles every Compact case with the real Compact compiler and lists any that do not compile in the job summary. Each rule's page has a **Known limits** section.
 
@@ -497,6 +526,7 @@ CI also compiles every Compact case with the real Compact compiler and lists any
 | `pause-flag-unguarded.compact` | MS034 | found | report pending |
 | `role-key-from-public-key.ts` | MS120 | found | report pending |
 | `secret-key-as-map-key.compact` | MS007 | found | report pending |
+| `staking-claimed-owner-id.compact` | MS036 | found | report pending |
 
 **Found in a public project.** Scanning [MeshJS/midnight-contracts-wizard](https://github.com/MeshJS/midnight-contracts-wizard) (contract templates that developers copy, commit `a1f868d`) found access checks that a caller can bypass. Each was checked by hand against the source. [▶ See the scan in the playground](https://efforthye.github.io/midnight-shield/#repo=MeshJS/midnight-contracts-wizard/tree/a1f868d/packages/contract/src) (also under **Examples… → Real projects**). Reported to the maintainers in [MeshJS/midnight-contracts-wizard#1](https://github.com/MeshJS/midnight-contracts-wizard/issues/1).
 
@@ -535,8 +565,9 @@ Rules were checked against the detector lists of [Slither](https://github.com/cr
 | Bug class | Slither / Circomspect | Midnight Shield |
 | --- | --- | --- |
 | Unprotected value transfer | `arbitrary-send-eth` | MS019 |
-| Unprotected privileged change | `protected-vars`, `suicidal` | MS011, MS020, MS034 |
-| Caller identity from an untrusted source | `tx-origin` | MS001, MS013 |
+| Unprotected privileged change | `protected-vars`, `suicidal` | MS011, MS020, MS034, MS035 |
+| Who can call what | `vars-and-auth` printer | `--print access` |
+| Caller identity from an untrusted source | `tx-origin` | MS001, MS013, MS036 |
 | Weak randomness | `weak-prng` | MS004, MS105, MS113 |
 | Tautologies | `tautology`, `tautological-compare` | MS017 |
 | Constant conditions | `boolean-cst`, constant branch | MS024 |
@@ -560,7 +591,6 @@ Midnight Shield works alongside the tools you already use. Each does a different
 | Tool | What it does | Use it for |
 | --- | --- | --- |
 | Compact compiler | Checks types and makes every disclosure of private data explicit | Writing correct contracts. Always required |
-| [Night Check](https://github.com/CjDabrow/night-check) | Fast pattern checks for Compact and DApp code, with a web UI that records reviews on chain | Quick checks and a public record of a review |
 | **Midnight Shield** | Data-flow analysis built around Midnight's privacy model: the disclosure map, entropy-aware hash checks, suggested fixes and a privacy diff on pull requests | Catching privacy and security bugs before deploy, in your editor, in CI and with AI agents |
 
 On other chains, the same role is played by [Slither](https://github.com/crytic/slither) for Solidity and aztec-lint for Noir.
@@ -569,8 +599,8 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 
 | Check | What it proves | Command |
 | --- | --- | --- |
-| **Unit and integration tests** (373 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
-| **Benchmark** | 170 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
+| **Unit and integration tests** (400 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
+| **Benchmark** | 180 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
 | **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is checked by hand and listed with the reason in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |
@@ -585,10 +615,11 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 - [x] **v0.3** Merkle and secret rules, corpus verification, real-compiler CI
 - [x] **v0.4** Disclosure map, confidence, baselines, Markdown, plugins, autofix, TypeScript checks, playground, VS Code extension, npm package
 - [x] **v0.5** Repository and folder scanning in the playground, project logo, GitHub Packages
-- [x] **Next** Privacy diff on pull requests, status badge, suggested fixes, accuracy benchmark, 55 rules (MS011–MS034, MS103–MS121)
-- [ ] Witness implementations checked against the contract that declares them (beyond MS113)
+- [x] **v0.6** Privacy diff on pull requests, status badge, suggested fixes, accuracy benchmark, field test, presets, ignore comments with a reason, witness implementations checked against the contract (MS121)
+- [x] **Next** Access map (`--print access`) with imported modules resolved, inconsistent guards (MS035), claimed identities (MS036)
+- [ ] Witness constraint report: what each prover-chosen value can reach, and what limits it
+- [ ] Upgrade check: compare two versions of a contract for changes that break deployed state or DApps
 - [ ] MCP server and language server
-- [ ] Ignore comments with a recorded reason, and strict / recommended presets
 - [ ] VS Code Marketplace release
 - [ ] Data-flow facts for plugins
 - [ ] More rules from community feedback
@@ -617,7 +648,7 @@ The pitch deck from KR NightForce Cohort 2: the problem, the solution, how it co
 
 ## Acknowledgements
 
-Several initial rule ideas come from [Night Check](https://github.com/CjDabrow/night-check) (MIT). Feature ideas from [Slither](https://github.com/crytic/slither), [Aderyn](https://github.com/Cyfrin/aderyn), [Circomspect](https://github.com/trailofbits/circomspect) and aztec-lint. Built as part of **KR NightForce Cohort 2** (Builder track).
+Feature ideas from [Slither](https://github.com/crytic/slither), [Aderyn](https://github.com/Cyfrin/aderyn), [Circomspect](https://github.com/trailofbits/circomspect) and aztec-lint. Built as part of **KR NightForce Cohort 2** (Builder track).
 
 ## License
 

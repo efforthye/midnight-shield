@@ -1,0 +1,11 @@
+// expect: none
+// note: comparing a parameter with state is not about the caller
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger round: Uint<32>;
+export ledger votes: Counter;
+export circuit vote(r: Uint<32>): [] {
+  assert(round == disclose(r), "wrong round");
+  votes.increment(1);
+}

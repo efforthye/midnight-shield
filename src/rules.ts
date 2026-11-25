@@ -275,6 +275,20 @@ export const RULES: RuleMeta[] = [
     summary: "A ledger field that any caller can set is trusted by another circuit in a check or a token transfer.",
   },
   {
+    id: "MS035",
+    name: "inconsistent-guard",
+    severity: "high",
+    confidence: "medium",
+    summary: "One exported circuit checks the caller before changing a ledger field, and another exported circuit overwrites the same field with no caller check.",
+  },
+  {
+    id: "MS036",
+    name: "claimed-identity",
+    severity: "critical",
+    confidence: "medium",
+    summary: "An access check compares a stored owner or admin id with a circuit parameter. Ledger values are public, so anyone can pass the stored id.",
+  },
+  {
     id: "MS101",
     name: "remote-proof-server",
     severity: "critical",

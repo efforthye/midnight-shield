@@ -1,0 +1,21 @@
+// expect: none
+// note: different circuits write different entries of a map
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger ownerId: Bytes<32>;
+witness secretKey(): Bytes<32>;
+export circuit deriveId(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:owner:"), sk]);
+}
+constructor() {
+  ownerId = disclose(deriveId(secretKey()));
+}
+export ledger balances: Map<Bytes<32>, Uint<64>>;
+export circuit deposit(who: Bytes<32>, a: Uint<64>): [] {
+  balances.insert(disclose(who), disclose(a));
+}
+export circuit seize(who: Bytes<32>): [] {
+  assert(deriveId(secretKey()) == ownerId, "not the owner");
+  balances.remove(disclose(who));
+}
