@@ -25,6 +25,12 @@ Each finding has `ruleId`, `severity`, `confidence`, `message`, `file`, `line`, 
 
 To see everything the contract makes public, run `--print disclosures`. Any `RAW` row is private data published as is: check that it is meant to be public.
 
+For an audit-style review, also run:
+
+- `--print access`: who can call each exported circuit, what it changes and how its checks hold up. A `BYPASSABLE` circuit has only checks the prover controls.
+- `--print witnesses`: every prover-chosen value, where it goes and what constrains it. `CIRCULAR` and `FREE` values are the ones to fix.
+- `midnight-shield upgrade old/ new/` before changing a deployed contract: ledger fields are stored by position, so inserting, removing or reordering one breaks the existing state.
+
 ## Step 2: Fix, most severe first
 
 Work through findings in order: critical, high, medium, low, info. For each one, start from `suggestion`: it rewrites the flagged line, with placeholders such as `myapp` for names you must choose from the project (a domain tag, a witness). Adapt it to the code, and open the rule page at `docUrl` if the fix is not obvious.
