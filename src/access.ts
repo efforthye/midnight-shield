@@ -252,7 +252,9 @@ class AccessScanner {
       if (s.kind === "if") out.guards.push(this.classify(s.test, env, s.loc.line, via, params));
       if (s.kind === "assign") {
         const f = rootField(s.target, this.ctx);
-        if (f) out.writes.push({ field: f, line: s.loc.line, col: s.loc.col, overwrite: s.op === "=" && s.target.kind === "ident" });
+        // total = total + 1 updates the value; only a write that ignores the old value replaces it
+        const readsOld = [...exprs(s.value)].some((x) => rootField(x, this.ctx) === f);
+        if (f) out.writes.push({ field: f, line: s.loc.line, col: s.loc.col, overwrite: s.op === "=" && s.target.kind === "ident" && !readsOld });
       }
       for (const e of stmtExprs(s)) {
         if (e.kind !== "call") continue;
@@ -449,6 +451,9 @@ export function checkClaimedIdentity(program: Program, raw: RawFinding[] = [], i
   const seen = new Set<number>();
   for (const c of accessMap(program, raw, imports)) {
     if (c.module) continue;
+    // a query (no state change, no transfer) that compares an argument with the admin answers
+    // "is this user the admin?", which is not an access check
+    if (!c.writes.length && !c.tokens.some((t) => !t.op.startsWith("receive"))) continue;
     for (const g of c.guards) {
       if (g.kind !== "claimed-id" || seen.has(g.line)) continue;
       seen.add(g.line);

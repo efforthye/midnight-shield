@@ -1,0 +1,12 @@
+// expect: none
+// note: a read-only question about a given user, not an access check
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger adminAddress: Bytes<32>;
+export circuit hasPermission(user: Bytes<32>): Boolean {
+  if (disclose(user) == adminAddress) {
+    return true;
+  }
+  return false;
+}

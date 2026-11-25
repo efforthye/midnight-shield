@@ -1,6 +1,6 @@
-import { checkSelfSatisfiable, constraintMap, type CircuitConstraints } from "./constraints.js";
+import { checkSelfSatisfiable, constraintMap, witnessRoles, type CircuitConstraints } from "./constraints.js";
 import { accessMap, checkClaimedIdentity, checkInconsistentGuards, type CircuitAccess } from "./access.js";
-import { Analyzer, type DisclosureEvent, type ImportResolver, type RawFinding } from "./analyzer.js";
+import { Analyzer, type DisclosureEvent, type Evidence, type ImportResolver, type RawFinding } from "./analyzer.js";
 import type { Program } from "./ast.js";
 import { pragmaFix, type TextEdit } from "./fixes.js";
 import { lex } from "./lexer.js";
@@ -34,6 +34,8 @@ export interface Finding {
   suppressionReason?: string;
   /** a safe automatic fix, when one exists */
   fix?: TextEdit;
+  /** the engine's verdict behind the finding: value, where it goes, which checks it passes */
+  evidence?: Evidence;
   /** a suggested fix to review and apply by hand (see suggest.ts) */
   suggestion?: Suggestion;
 }
@@ -159,14 +161,78 @@ function bidiCharacters(source: string): RawFinding[] {
 /** Deploy and end-to-end scripts stub out witnesses they never run (zeros as a voter secret, say). */
 const SCRIPT_FILE = /(^|\/)(e2e[^/]*|[^/]*deploy[^/]*|[^/]*\.e2e)\.[cm]?[jt]sx?$/i;
 
+/**
+ * Rules and the constraint engine must agree. MS002 is kept only where the
+ * engine also sees the witness reach state with nothing constraining it, and
+ * its message then says exactly where it goes. Every kept finding carries the
+ * engine's verdict as evidence.
+ */
+function explainWithEngine(program: Program, raw: RawFinding[]): void {
+  const map = constraintMap(program).filter((c) => !c.module);
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const f = raw[i];
+    if (f.ruleId !== "MS002") continue;
+    const w = f.message.match(/Witness '([^']+)\(\)'/)?.[1];
+    if (!w) continue;
+    const name = `${w}()`;
+    const free = map.flatMap((c) => c.inputs.filter((x) => x.name === name && !x.constraints.length && !x.hashedOnly && x.reaches.length > 0).map((x) => ({ c, x })));
+    if (!free.length) {
+      // the engine found a check on it in every circuit that uses it: no finding
+      if (map.some((c) => c.inputs.some((x) => x.name === name))) raw.splice(i, 1);
+      continue;
+    }
+    const { c, x } = free[0];
+    const reaches = x.reaches;
+    f.message = `Witness '${name}' goes into ${reaches.map((r) => (r === "return value" ? "the return value" : `'${r}'`)).join(", ")} of '${c.name}' and nothing checks its value: no assert compares it with a range, a ledger value or a membership proof. The prover's DApp can return any value here. Check it against something the contract trusts before using it.`;
+    f.evidence = { circuit: c.name, value: name, reaches, checks: [], verdict: "FREE" };
+  }
+  for (const f of raw) {
+    if (f.ruleId !== "MS037" || f.evidence) continue;
+    const c = map.find((m) => m.selfSatisfiable.some((s) => s.line === f.loc.line));
+    const s = c?.selfSatisfiable.find((x) => x.line === f.loc.line);
+    if (c && s) f.evidence = { circuit: c.name, value: s.inputs.join(", "), reaches: [], checks: [{ kind: "only other prover values", line: s.line }], verdict: "CIRCULAR" };
+  }
+}
+
+/** Access findings carry the access map's verdict for the circuit they are in. */
+function explainAccess(program: Program, raw: RawFinding[], imports: Parameters<typeof accessMap>[2]): void {
+  const ACCESS_RULES = new Set(["MS001", "MS009", "MS013", "MS019", "MS020", "MS035", "MS036"]);
+  if (!raw.some((f) => ACCESS_RULES.has(f.ruleId) && !f.evidence)) return;
+  const map = accessMap(program, raw, imports).filter((c) => !c.module);
+  for (const f of raw) {
+    if (!ACCESS_RULES.has(f.ruleId) || f.evidence) continue;
+    const c = map.find((m) => m.guards.some((g) => g.line === f.loc.line) || m.writes.some((w) => w.line === f.loc.line) || m.tokens.some((t) => t.line === f.loc.line));
+    if (!c) continue;
+    f.evidence = {
+      circuit: c.name,
+      value: [...new Set(c.writes.map((w) => w.field))].join(", ") || "-",
+      reaches: [...new Set([...c.writes.map((w) => w.field), ...c.tokens.map((t) => t.op)])],
+      checks: c.guards.map((g) => ({ kind: g.bypass ? `${g.kind} (${g.bypass})` : g.kind, line: g.line })),
+      verdict: c.who.toUpperCase(),
+    };
+  }
+}
+
+/** A minified or bundled build output: one huge line, or a webpack/Next.js chunk. Not source anyone wrote. */
+function isBuildOutput(source: string): boolean {
+  if (/webpackChunk|__NEXT_P|\/\*! For license information/.test(source.slice(0, 2000))) return true;
+  const lines = source.split("\n");
+  return lines.some((l) => l.length > 2000);
+}
+
+/** A copy of the Compact standard library (vendored for reference). */
+const isStdlibCopy = (source: string) => /This file is part of Compact\./.test(source.slice(0, 400)) && /module\s+CompactStandardLibrary|export circuit (persistentHash|sendShielded|mintShieldedToken)\b/.test(source);
+
 function analyze(source: string, file: string, options: LintOptions): Analysis {
   if (isSdkFile(file)) {
-    if (isTestFile(file)) return { raw: [] };
+    if (isTestFile(file) || isBuildOutput(source)) return { raw: [] };
     const raw = [...lintSdkSource(source), ...bidiCharacters(source)];
     return { raw: SCRIPT_FILE.test(file.split("\\").join("/")) ? raw.filter((f) => f.ruleId !== "MS113") : raw };
   }
+  if (isStdlibCopy(source)) return { raw: [] };
   const program = parse(source);
-  const analyzer = new Analyzer(program, options.resolver, options.absolutePath);
+  // one engine pass decides how each witness is used; the analyzer's rules read it instead of guessing from names
+  const analyzer = new Analyzer(program, options.resolver, options.absolutePath, witnessRoles(program));
   const raw = analyzer.run();
   raw.push(...checkAuthWrites(program), ...checkStructural(program), ...checkContract(program), ...bidiCharacters(source));
   // one finding per helper: the same `assertOnlyOwner()` called from twelve circuits is one bug, not twelve
@@ -195,6 +261,8 @@ function analyze(source: string, file: string, options: LintOptions): Analysis {
   const witnessAsserts = new Set(raw.filter((f) => f.ruleId === "MS013").map((f) => f.loc.line));
   raw.push(...checkSelfSatisfiable(program).filter((f) => !witnessAsserts.has(f.loc.line)));
   raw.push(...checkInconsistentGuards(program, raw, imports).filter((f) => !reportedWrites.has(f.loc.line)));
+  explainAccess(program, raw, imports);
+  explainWithEngine(program, raw);
   for (const rule of options.plugins ?? []) raw.push(...runCustomRule(rule, file, source, program));
   return { program, analyzer, raw };
 }
@@ -216,6 +284,8 @@ export function toFindings(raw: RawFinding[], source: string, file: string, opti
     .filter((f) => !disabled.has(f.ruleId))
     .filter((f) => SEVERITY_ORDER.indexOf(f.severity) <= minRank)
     .filter((f) => CONFIDENCE_ORDER.indexOf(f.confidence) <= minConf)
+    // the same rule saying the same thing twice on one line is one finding
+    .filter((f, i, all) => all.findIndex((g) => g.ruleId === f.ruleId && g.loc.line === f.loc.line && g.message === f.message) === i)
     .sort((a, b) => a.loc.line - b.loc.line || a.loc.col - b.loc.col)
     .map((f) => {
       const meta = metaFor(f.ruleId, options.plugins);
@@ -236,6 +306,7 @@ export function toFindings(raw: RawFinding[], source: string, file: string, opti
         snippet,
         fingerprint: fingerprint(f.ruleId, file, snippet, n),
       };
+      if (f.evidence) finding.evidence = f.evidence;
       if (f.ruleId === "MS006") finding.fix = pragmaFix(source);
       const suggestion = suggestFix(f.ruleId, f.message, snippet);
       if (suggestion) finding.suggestion = suggestion;

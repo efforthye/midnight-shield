@@ -105,3 +105,39 @@ export circuit go(a: Uint<16>): [] { assert(ok(a), "no"); n.increment(1); }`);
     assert.ok(!found.includes("MS037"));
   });
 });
+
+describe("rules agree with the engine", () => {
+  it("a Bytes<32> witness used as a number is a FREE value (MS002), not a secret (MS007)", () => {
+    const src = `export ledger total: Bytes<32>;
+witness latestResult(): Bytes<32>;
+export circuit add(): [] {
+  const x = disclose(latestResult()) as Field;
+  total = ((total as Field) + x) as Bytes<32>;
+}`;
+    const found = lintSource(HEADER + src, "c.compact");
+    assert.deepEqual(found.map((f) => f.ruleId), ["MS002"]);
+    assert.match(found[0].message, /goes into 'total' of 'add'/);
+    assert.deepEqual(found[0].evidence, { circuit: "add", value: "latestResult()", reaches: ["total"], checks: [], verdict: "FREE" });
+  });
+  it("a neutral Bytes<32> witness the contract also hashes is key material, and says why", () => {
+    const src = `export ledger ids: Set<Bytes<32>>;
+export ledger leaked: Bytes<32>;
+witness token(): Bytes<32>;
+export circuit go(): [] {
+  ids.insert(disclose(persistentHash<Vector<2, Bytes<32>>>([pad(32, "t:"), token()])));
+  leaked = disclose(token());
+}`;
+    const f = lintSource(HEADER + src, "c.compact").find((x) => x.ruleId === "MS007");
+    assert.ok(f);
+    assert.match(f.message, /hashes it into an identity or commitment/);
+  });
+});
+
+describe("files that are not anyone's source", () => {
+  it("skips minified bundles and copies of the standard library", () => {
+    const bundle = `(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[636],{92:(e,t,r)=>{localStorage.setItem("seed",e.seed);console.log(e.mnemonic)}}]);`;
+    assert.deepEqual(lintSource(bundle, "pages__app-1.js"), []);
+    const stdlib = `// This file is part of Compact.\n// Copyright (C) 2025 Midnight Foundation\n${HEADER}export circuit sendShielded(x: Uint<64>): [] {}\n`;
+    assert.deepEqual(lintSource(stdlib, "stdlib.compact"), []);
+  });
+});

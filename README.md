@@ -65,7 +65,8 @@ Midnight Shield is to Midnight what **Slither** is to Solidity and **aztec-lint*
 - 🗺️ **Disclosure map.** One table of everything your contract makes public, and whether it is raw, hashed or committed. Unique to Midnight.
 - 🎲 **Entropy-aware.** Knows a `Boolean` vote has 1 bit of secret entropy and a `Bytes<32>` key has 256, so it flags brute-forceable hashes without crying wolf.
 - 🎯 **Honest about certainty.** Every finding has a severity *and* a confidence. Rules that rely on names or guess intent say so.
-- 🧪 **Measured on other people's code.** A field test on 36 third-party Midnight projects (90% precision on the first scan, every finding checked by hand, [details](verify/field-test.md)), plus a labeled benchmark with precision and recall per rule ([results](bench/RESULTS.md)). 1,052 real files of the official examples and OpenZeppelin Contracts for Compact parse with zero errors, and each medium-or-worse finding on them is checked by hand. Examples are compiled with the real Compact compiler.
+- 💥 **Confirms what it finds.** `midnight-shield exploit` runs the compiled contract with a lying DApp and reports a bypass only when the forged call actually goes through, with a script that reproduces it. Every finding with compiled code in the field and blind tests was confirmed this way ([details](docs/exploit.md)).
+- 🧪 **Measured on other people's code, including code it never saw.** A blind test on 30 projects picked by a fixed-seed rule: 62% precision on the first scan ([details](verify/blind-test.md)). A field test on 36 others: 90% ([details](verify/field-test.md)). Every verdict is published, or committed to by hash until the project is told. Plus a labeled benchmark with precision and recall per rule ([results](bench/RESULTS.md)). 1,052 real files of the official examples and OpenZeppelin Contracts for Compact parse with zero errors, and each medium-or-worse finding on them is checked by hand. Examples are compiled with the real Compact compiler.
 - 🔗 **Contract and DApp read together.** When a scan covers both, Midnight Shield matches the witnesses a contract declares with their TypeScript implementations, so it can tell that `bidSalt` (a name no rule would guess) is a commitment's randomness, and that its implementation returns zeros (MS121). It also follows state across circuits: a field anyone can set in one circuit and another circuit trusts (MS034).
 - 🔁 **Privacy diff on every pull request.** The GitHub Action comments what a change newly makes public and which findings it adds or fixes, before it is merged.
 - 🩹 **Suggested fixes.** Each finding comes with the flagged line rewritten, as a diff you can copy.
@@ -297,7 +298,7 @@ Secrets are recognized by name (`seed`, `secretKey`, `mnemonic`, …) and by whe
 | [MS115](docs/rules/MS115.md) | `hardcoded-password` | 🔴 High | medium | A password or passphrase (for example for the private state store) is written into the source |
 | [MS116](docs/rules/MS116.md) | `secret-rendered-in-ui` | 🟡 Medium | medium | A secret is rendered on screen in JSX |
 | [MS117](docs/rules/MS117.md) | `secret-sent-to-analytics` | 🔴 High | medium | A secret is passed to an analytics or error-tracking call |
-| [MS118](docs/rules/MS118.md) | `unsafe-html` | 🟡 Medium | medium | HTML from a variable is written into the page (innerHTML, dangerouslySetInnerHTML, document.write) |
+| [MS118](docs/rules/MS118.md) | `unsafe-html` | 🔵 Low | medium | HTML from a variable is written into the page (innerHTML, dangerouslySetInnerHTML, document.write) |
 | [MS119](docs/rules/MS119.md) | `secret-in-public-env` | 🟣 Critical | high | A secret is read from a VITE_/NEXT_PUBLIC_/REACT_APP_ variable, which the bundler ships to every visitor |
 | [MS120](docs/rules/MS120.md) | `secret-from-public-data` | 🔴 High | medium | A secret computed only from public values such as an address or a public key, so anyone can recompute it |
 | [MS121](docs/rules/MS121.md) | `weak-witness-implementation` | 🟣 Critical | high | Contract and DApp together: a witness the contract uses as randomness or a secret key is implemented with zeros, a clock, `Math.random()` or a constant |
@@ -393,6 +394,23 @@ contract.compact
 ```
 
 It reports removed, inserted, reordered and retyped ledger fields, changed enums and structs stored in the ledger, changed circuit and witness signatures, removed circuits (still callable until their verifier key is removed), and circuits whose caller check got weaker, using the access map. The full list and its reasons are in [docs/upgrade.md](docs/upgrade.md). This is the Compact counterpart of `slither-check-upgradeability`.
+
+## Attack reproduction
+
+A finding says a check looks bypassable. `exploit` tries to bypass it, in the Compact runtime, with the contract compiled by the real compiler:
+
+```bash
+npx midnight-shield exploit contracts/hiring.compact -o exploits/
+```
+
+```text
+CONFIRMED     proveMinRating  circular (MS037)
+  the same call passes or fails depending only on what localRating() returns: with 0n it fails
+  (failed assert: Rating below required threshold), with 65535n it passes. The caller's DApp
+  chooses that value, so the check decides nothing.
+```
+
+The contract is deployed by one key and attacked from another, whose DApp lies: a witness returns whatever passes, a public owner id is passed as the caller's own, the owner's public key is reported as the wallet's. A bypass is **confirmed** only when the forged call goes through on the flagged check itself, or the forged value lands in the ledger, and each confirmed bypass comes with a script that reproduces it (`-o <dir>`). Not confirmed is not proof of safety. Details: [docs/exploit.md](docs/exploit.md).
 
 ## How it works
 
@@ -541,16 +559,18 @@ Exit codes: `0` no blocking findings, `1` findings at or above `--fail-on`, `2` 
 
 ## Accuracy
 
-Accuracy is measured two ways.
+Accuracy is measured three ways. Every verdict is listed in [verify/field-verdicts.md](verify/field-verdicts.md) and [verify/blind-verdicts.json](verify/blind-verdicts.json): low-risk findings in full (repository, commit, line), exploitable ones as SHA-256 commitments that are opened once the project has been told (`node scripts/check-verdict.mjs` checks them).
+
+**Blind test.** 30 public Midnight projects the tool had never been run on, picked by a rule fixed before looking (GitHub search, exclusions, a fixed-seed shuffle), scanned once. **151 of 244 findings were real issues (62% precision)**, 70% without one minified bundle that should not have been scanned. The false positives came from a handful of causes (build output, UI labels taken for passwords, identifiers taken for secrets, counters taken for overwrites); each is fixed, has a look-alike benchmark case, and is listed in [verify/blind-test.md](verify/blind-test.md). This is the number to quote: the other two are measured on code the tool was tuned on.
 
 **Field test on third-party code.** 36 public Midnight projects found through GitHub search, scanned with default settings, every medium-or-worse finding checked against the source. On the first scan, before any change for this test, **121 of 134 findings were real issues (90% precision)**. The 13 false positives were fixed; each one and its fix is listed in [verify/field-test.md](verify/field-test.md), along with why the official examples and OpenZeppelin code show so few findings (some patterns, such as Boolean witnesses, never occur there).
 
-**Labeled benchmark.** 188 labeled files: 128 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
+**Labeled benchmark.** 202 labeled files: 130 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
 
 | Rule | Expected findings | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | MS001 | 5 | 5 | 0 | 0 | 100% | 100% |
-| MS002 | 4 | 4 | 0 | 0 | 100% | 100% |
+| MS002 | 6 | 6 | 0 | 0 | 100% | 100% |
 | MS003 | 5 | 5 | 0 | 0 | 100% | 100% |
 | MS004 | 4 | 4 | 0 | 0 | 100% | 100% |
 | MS007 | 7 | 7 | 0 | 0 | 100% | 100% |
@@ -564,7 +584,7 @@ All rules together:
 
 | Rule | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| **All** | **128** | **0** | **0** | **100%** | **100%** |
+| **All** | **130** | **0** | **0** | **100%** | **100%** |
 
 CI also compiles every Compact case with the real Compact compiler and lists any that do not compile in the job summary. Each rule's page has a **Known limits** section.
 
@@ -581,6 +601,7 @@ CI also compiles every Compact case with the real Compact compiler and lists any
 | `secret-key-as-map-key.compact` | MS007 | found | report pending |
 | `staking-claimed-owner-id.compact` | MS036 | found | report pending |
 | `claimed-rating-threshold.compact` | MS037 | found | report pending |
+| `score-added-to-balance.compact` | MS002 | found | report pending |
 
 **Found in a public project.** Scanning [MeshJS/midnight-contracts-wizard](https://github.com/MeshJS/midnight-contracts-wizard) (contract templates that developers copy, commit `a1f868d`) found access checks that a caller can bypass. Each was checked by hand against the source. [▶ See the scan in the playground](https://efforthye.github.io/midnight-shield/#repo=MeshJS/midnight-contracts-wizard/tree/a1f868d/packages/contract/src) (also under **Examples… → Real projects**). Reported to the maintainers in [MeshJS/midnight-contracts-wizard#1](https://github.com/MeshJS/midnight-contracts-wizard/issues/1).
 
@@ -654,8 +675,8 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 
 | Check | What it proves | Command |
 | --- | --- | --- |
-| **Unit and integration tests** (421 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
-| **Benchmark** | 188 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
+| **Unit and integration tests** (441 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
+| **Benchmark** | 202 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
 | **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is checked by hand and listed with the reason in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |
@@ -671,7 +692,7 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 - [x] **v0.4** Disclosure map, confidence, baselines, Markdown, plugins, autofix, TypeScript checks, playground, VS Code extension, npm package
 - [x] **v0.5** Repository and folder scanning in the playground, project logo, GitHub Packages
 - [x] **v0.6** Privacy diff on pull requests, status badge, suggested fixes, accuracy benchmark, field test, presets, ignore comments with a reason, witness implementations checked against the contract (MS121)
-- [x] **Next** Access map (`--print access`) with imported modules resolved, inconsistent guards (MS035), claimed identities (MS036), witness constraint report (`--print witnesses`) and self-satisfiable checks (MS037), upgrade check (`midnight-shield upgrade`)
+- [x] **Next** Attack reproduction (`exploit`), blind test with published verdicts, one engine behind the rules (MS002/MS007 read the witness engine). Access map (`--print access`) with imported modules resolved, inconsistent guards (MS035), claimed identities (MS036), witness constraint report (`--print witnesses`) and self-satisfiable checks (MS037), upgrade check (`midnight-shield upgrade`)
 - [ ] MCP server and language server
 - [ ] VS Code Marketplace release
 - [ ] Data-flow facts for plugins

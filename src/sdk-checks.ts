@@ -34,6 +34,9 @@ function closeOf(tokens: Token[], open: number): number {
 }
 
 /** Secret names passed as values in the argument tokens: directly, in ${…}, or as an object shorthand; not through another call. */
+/** Words that make a name describe a secret (its length, where it is kept) rather than hold one. */
+const METADATA_WORDS = new Set(["length", "len", "min", "max", "size", "count", "limit", "env", "name", "path", "file", "label", "prefix", "type", "kind", "url", "hint", "placeholder", "policy", "pattern", "regex"]);
+
 function directSecrets(tokens: Token[], open: number): string[] {
   const close = closeOf(tokens, open);
   const inner: Token[] = [];
@@ -63,6 +66,8 @@ function directSecrets(tokens: Token[], open: number): string[] {
     if (call > 0 || t.kind !== "ident" || !isSecretValue(t.value)) continue;
     // the name of a secret (an environment variable, a file), not the secret
     if (/(Env|Var|Name|Path|File|Dir|Label|Prefix|Id|Length|Len|Type|Kind|Url|Key[sS]?Env)$/.test(t.value)) continue;
+    // MIN_PASSPHRASE_LENGTH, maxPasswordSize: a rule about a secret, not the secret
+    if (t.value.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().split(/[^a-z0-9]+/).some((w) => METADATA_WORDS.has(w))) continue;
     const next = inner[k + 1]?.value;
     if (next === "(" || next === ":") continue;
     if (next === "." && SAFE_PROPERTIES.has(inner[k + 2]?.value ?? "")) continue;
@@ -309,6 +314,8 @@ function hardcodedPassword(tokens: Token[]): RawFinding[] {
     if (!(op === "=" || op === ":" || op === "(") || !v || v.kind !== "string" || v.value.startsWith("`")) continue;
     const lit = v.value.slice(1, -1);
     if (lit.length < 4) continue;
+    // a mask ('****') or a UI label ("intro", "월렛 만들기", 'Password'): plain words, not a password
+    if (/^[*xX•·.\-]+$/.test(lit) || /^[A-Za-z]+$/.test(lit) || /\s/.test(lit) || /[^\x00-\x7f]/.test(lit)) continue;
     // a password labeled as a throwaway (test, local devnet, demo) is a deliberate development value
     const words = (x: string) => x.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/);
     const THROWAWAY = new Set(["test", "testing", "local", "dev", "devnet", "demo", "example", "sample", "dummy", "fixture"]);
@@ -385,7 +392,8 @@ function unsafeHtml(tokens: Token[]): RawFinding[] {
     if (!hit) continue;
     out.push({
       ruleId: "MS118",
-      severity: "medium",
+      // a hygiene warning: most innerHTML in DApps renders the app's own values; only attacker-controlled HTML is XSS
+      severity: "low",
       confidence: "medium",
       loc: { line: t.line, col: t.col },
       message: `${hit} puts HTML into the page. If any part comes from chain data, a URL or another user, it can run script in the DApp, where it can read private state and ask the wallet to sign. Use textContent, or sanitize with a library such as DOMPurify.`,
@@ -425,6 +433,8 @@ function secretFromPublicData(tokens: Token[]): RawFinding[] {
     const t = tokens[i];
     if (t.kind !== "ident" || (tokens[i - 1].value !== "const" && tokens[i - 1].value !== "let") || tokens[i + 1].value !== "=") continue;
     if (!isSecretName(t.value) || /(hash|commit|id$|pk$|public|pub)/i.test(t.value)) continue;
+    // contractIdSeed, sessionIdSeed: a seed for an identifier, not a secret
+    if (t.value.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().split(/[^a-z0-9]+/).includes("id")) continue;
     // the right-hand side up to the end of the statement
     const rhs: Token[] = [];
     let depth = 0;
@@ -439,6 +449,9 @@ function secretFromPublicData(tokens: Token[]): RawFinding[] {
     }
     // a function (`const seedFor = (addr) => …`) is not a stored secret
     if (rhs.some((x) => x.value === "=>" || x.value === "function")) continue;
+    // await service.secretFor(address): a method of some other object, computed where we cannot see, maybe with a key
+    const firstCall = rhs.findIndex((x) => x.value === "(");
+    if (rhs[0]?.value === "await" && firstCall > 0 && rhs.slice(1, firstCall).some((x) => x.value === ".")) continue;
     const idents = rhs.filter((x) => x.kind === "ident");
     const publicInput = idents.find((x, k) => PUBLIC_NAME.test(x.value) && rhs[rhs.indexOf(x) + 1]?.value !== "(" && k >= 0);
     if (!publicInput) continue;

@@ -6,6 +6,7 @@
 // evaluated inline with the caller's argument infos, so flows through helper
 // circuits are followed. Rules hook into this walk.
 
+import type { WitnessRole } from "./constraints.js";
 import type { Decl, Expr, Loc, Param, Program, Stmt, TypeRef } from "./ast.js";
 import { SUPPORTED_LANGUAGE, RULES_BY_ID, type Confidence, type Severity } from "./rules.js";
 
@@ -15,6 +16,18 @@ export interface RawFinding {
   confidence: Confidence;
   message: string;
   loc: Loc;
+  /** the engine's verdict the finding is based on, so it can be checked */
+  evidence?: Evidence;
+}
+
+/** What the analysis engine concluded: which value, where it goes, which checks it passes through. */
+export interface Evidence {
+  circuit: string;
+  /** the prover-chosen value, or the ledger field for access findings */
+  value: string;
+  reaches: string[];
+  checks: { kind: string; line: number }[];
+  verdict: string;
 }
 
 export type Protection = "raw" | "hash" | "commit" | "public" | "constant";
@@ -215,10 +228,15 @@ export class Analyzer {
   /** exported circuits that authorize with anonymous Merkle membership */
   private anonymousCircuits = new Set<string>();
 
+  /** why each secret witness counts as one, for the MS007 message */
+  private secretReason = new Map<string, string>();
+
   constructor(
     private program: Program,
     private resolver?: ImportResolver,
     private file?: string,
+    /** how the contract uses each witness, from the constraint engine (constraints.ts) */
+    private roles: Map<string, WitnessRole> = new Map(),
   ) {
     if (file) this.visitedFiles.add(file);
     this.collect(program.decls, "", false, 0, file);
@@ -336,6 +354,8 @@ export class Analyzer {
    */
   private isFactualWitness(name: string): boolean {
     if (/rand|salt|nonce|seed|entropy|blind/i.test(name)) return false;
+    // used as a number somewhere (a score added to a balance): a fact the prover reports
+    if (this.roles.get(name)?.quantity) return true;
     const t = this.witnesses.get(name)?.returnType;
     return t !== undefined && this.isFactualType(t, 0);
   }
@@ -593,13 +613,15 @@ export class Analyzer {
     this.recordDisclosure(info, loc, frame, isWrite ? "ledger write" : "disclose", target);
     for (const w of info.rawWitness) if (!this.witnessSinks.has(w)) this.witnessSinks.set(w, frame.anchor ?? loc);
     // a field named as a public key (signingPublicKey, ownerPk) holds a public value under a key-like parameter name
-    const publicTarget = !!target && /public|(^|[a-z])(Pub|Pk)(Key)?$|^pk$/i.test(target.split(".")[0]);
+    // …and a field named as a reveal (seatSecretRevealed, revealedVrfSecret) is a deliberate opening at the end of a commit-reveal
+    const publicTarget = !!target && /public|(^|[a-z])(Pub|Pk)(Key)?$|^pk$|reveal/i.test(target.split(".")[0]);
     if (reportSecret && info.rawSecret?.size && !publicTarget) {
       const names = [...info.rawSecret].map((s) => (s.startsWith("w:") ? `witness '${s.slice(2)}()'` : `parameter '${s.slice(2)}'`));
+      const why = [...info.rawSecret].map((s) => this.secretReason.get(s.slice(2)) ?? "its name says it is a secret")[0];
       this.report(
         "MS007",
         frame.anchor ?? loc,
-        `The raw value of ${names.join(" and ")} is made public here, and the name says it is a secret. Anyone can read it from the ledger or transaction. Publish a domain-separated hash or a commitment of it instead, or keep it private.`,
+        `The raw value of ${names.join(" and ")} is made public here. It is treated as a secret because ${why}. Anyone can read it from the ledger or transaction. Publish a domain-separated hash or a commitment of it instead, or keep it private.`,
       );
     }
     if (info.lowHash && !frame.silent) {
@@ -623,7 +645,10 @@ export class Analyzer {
       case "member": {
         if (e.object.kind === "ident" && this.enums.has(e.object.name)) return empty();
         const obj = this.evalExpr(e.object, frame);
-        return { ...obj, sources: new Set(obj.sources), rawWitness: new Set(obj.rawWitness), type: undefined };
+        // a numeric field of a secret record (terms.principal) is an amount, not key material
+        const fieldType = obj.type ? this.structs.get(obj.type.name)?.find((f) => f.name === e.property)?.type : undefined;
+        const numeric = !!fieldType && (["Uint", "Field", "Boolean"].includes(fieldType.name) || this.enums.has(fieldType.name));
+        return { ...obj, sources: new Set(obj.sources), rawWitness: new Set(obj.rawWitness), type: fieldType, ...(numeric ? { rawSecret: undefined } : {}) };
       }
       case "index": {
         const obj = this.evalExpr(e.object, frame);
@@ -837,9 +862,23 @@ export class Analyzer {
    */
   private secretWitness(name: string, type: TypeRef | undefined): boolean {
     const short = name.slice(name.lastIndexOf("_") + 1);
-    if ((isSecretName(short) || isSecretName(name)) && keyLikeType(type)) return true;
+    const role = this.roles.get(name);
+    if ((isSecretName(short) || isSecretName(name)) && keyLikeType(type)) {
+      this.secretReason.set(name, "its name and type say it is a secret");
+      return true;
+    }
     if (!type || type.name !== "Bytes" || !/^Bytes<\s*32\s*>$/.test(type.text.replace(/\s/g, ""))) return false;
-    if (/(hash|commit|root|digest|id$|^id|address|addr|pk$|public|nonce|salt|rand|path|leaf|tag|color|domain|nullifier|name|label|title|text|message|memo|ur[il]|data|value|meta|description|content|note|cid)/i.test(short)) return false;
+    // the engine saw it used as a number (added, compared): an amount or a score, not key material
+    if (role?.quantity) return false;
+    // names that say it is public data, randomness (MS014's subject) or an identifier
+    if (/(hash|commit|root|digest|id$|^id|address|addr|pk$|public|nonce|salt|rand|path|leaf|tag|color|domain|nullifier|name|label|title|text|message|memo|ur[il]|data|value|meta|description|content|note|cid|result|score|count|amount|balance|time|date)/i.test(short)) return false;
+    if (role?.hashed) {
+      this.secretReason.set(name, "the contract also hashes it into an identity or commitment, so it is key material");
+      return true;
+    }
+    // used to pick a map or set entry (balances.insert(user, …)): an account identifier, not key material
+    if (role?.keyed) return false;
+    this.secretReason.set(name, "it is 32 bytes of private data that is never hashed, compared or used as a number, which is how secret keys are handled");
     return true;
   }
 
@@ -945,7 +984,9 @@ export class Analyzer {
 
     // MS010: deterministic in the secret alone (no fresh randomness)
     const privateInputs = infos.filter((i) => isPrivate(i));
-    if (privateInputs.length && privateInputs.every((i) => (i.rawSecret?.size ?? 0) > 0 || i.identity)) {
+    // a variable public input (a case id, an app id, a round) makes the tag differ per action, so it does not link them
+    const varyingPublic = infos.some((i) => !i.constant && !isPrivate(i));
+    if (privateInputs.length && !varyingPublic && privateInputs.every((i) => (i.rawSecret?.size ?? 0) > 0 || i.identity)) {
       out.identity = `${frame.prefix}${e.loc.line}:${e.loc.col}`;
     }
 

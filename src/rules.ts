@@ -417,7 +417,7 @@ export const RULES: RuleMeta[] = [
   {
     id: "MS118",
     name: "unsafe-html",
-    severity: "medium",
+    severity: "low",
     confidence: "medium",
     summary: "TypeScript/JavaScript: HTML from a variable is written into the page (innerHTML, dangerouslySetInnerHTML, document.write).",
   },

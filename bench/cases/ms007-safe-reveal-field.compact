@@ -1,0 +1,10 @@
+// expect: none
+// note: a field named as a reveal: the end of a commit-reveal
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger seatSecretRevealed: Bytes<32>;
+witness playerSecret(): Bytes<32>;
+export circuit finish(): [] {
+  seatSecretRevealed = disclose(playerSecret());
+}

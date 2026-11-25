@@ -161,3 +161,6 @@ playground/examples.generated.ts
 *.tgz
 vscode/*.vsix
 Claude outputs/
+
+# private salts for the verdict commitments in verify/ (publish a row and its salt only after the project has been told)
+.verdict-salts/

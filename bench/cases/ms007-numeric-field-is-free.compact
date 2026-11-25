@@ -1,0 +1,12 @@
+// expect: MS002
+// note: a number from a private record is an amount, not key material (MS007 stays quiet); it goes into state unchecked (MS002)
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+struct Terms { principal: Uint<64>; rate: Uint<16>; }
+export ledger principal: Field;
+witness secretTerms(): Terms;
+export circuit publish(): [] {
+  const t = secretTerms();
+  principal = disclose(t.principal as Field);
+}

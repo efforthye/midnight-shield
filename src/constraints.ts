@@ -37,6 +37,8 @@ interface Leaves {
   membership: boolean;
   /** inputs that appear outside any hash (the rest only appear hashed) */
   open: Set<string>;
+  /** inputs whose value itself is used, not as a key into a ledger map or set */
+  value: Set<string>;
 }
 
 const HASHES = new Set(["keccak256", "sha256", "secp256k1EcdsaVerify", "secp256k1EcdsaVerifyLowS", "secp256k1EcdsaRecover", "secp256k1EthereumAddress", "schnorrVerify", "ecdsaVerify", "persistentHash", "persistentCommit", "transientHash", "transientCommit", "ecMul", "ecMulGenerator", "hashToCurve", "jubjubSchnorrVerify", "merkleTreePathRoot", "merkleTreePathRootNoLeafHash"]);
@@ -85,12 +87,32 @@ interface Sink {
   leaves: Leaves;
 }
 
-const empty = (): Leaves => ({ witnesses: new Set(), params: new Set(), ledger: new Set(), constant: false, hashed: false, ownKey: false, relational: false, membership: false, open: new Set() });
+const empty = (): Leaves => ({ witnesses: new Set(), params: new Set(), ledger: new Set(), constant: false, hashed: false, ownKey: false, relational: false, membership: false, open: new Set(), value: new Set() });
 const calleeIdent = (e: Expr): string => (e.kind === "call" && e.callee.kind === "ident" ? e.callee.name : "");
+
+const ARITH = new Set(["+", "-", "*", "/", "%", "<", "<=", ">", ">="]);
+
+/** How the contract treats a witness, from everywhere it is used: the facts rules read instead of guessing from names. */
+export interface WitnessRole {
+  /** used in arithmetic or an ordering comparison: an amount, a score, a time */
+  quantity: boolean;
+  /** used inside a hash, commitment or signature: key material */
+  hashed: boolean;
+  /** published (to the ledger, a transfer or a return value) outside any hash */
+  publishedRaw: boolean;
+  /** used as the key of a ledger map or set entry: an identifier for an account or record */
+  keyed: boolean;
+}
 
 class ConstraintScanner {
   /** how many hash calls we are inside while collecting leaves */
   private hashDepth = 0;
+  /** how many ledger lookups we are inside: a key picks an entry, its value is not used */
+  private keyDepth = 0;
+  /** witnesses seen as operands of arithmetic or ordering, and seen inside hashes */
+  readonly quantity = new Set<string>();
+  readonly hashedSeen = new Set<string>();
+  readonly keyedSeen = new Set<string>();
 
   constructor(
     private ctx: Ctx,
@@ -119,6 +141,7 @@ class ConstraintScanner {
         else if (this.roots.has(e.name)) {
           out.params.add(e.name);
           if (!this.hashDepth) out.open.add(e.name);
+          if (!this.hashDepth && !this.keyDepth) out.value.add(e.name);
         }
         else out.constant = true; // an enum member or a module-level constant
         break;
@@ -130,7 +153,9 @@ class ConstraintScanner {
           if (f && LEDGER_READS.has(e.callee.property)) {
             out.ledger.add(f);
             if (e.callee.property === "member" || e.callee.property === "checkRoot" || e.callee.property === "isHistoricRoot") out.membership = true;
+            this.keyDepth++;
             for (const a of e.args) this.leaves(a, env, out, depth + 1);
+            this.keyDepth--;
             break;
           }
           this.leaves(e.callee.object, env, out, depth + 1);
@@ -140,6 +165,9 @@ class ConstraintScanner {
         if (this.ctx.witnesses.has(name)) {
           out.witnesses.add(`${name}()`);
           if (!this.hashDepth) out.open.add(`${name}()`);
+          else this.hashedSeen.add(`${name}()`);
+          if (!this.hashDepth && !this.keyDepth) out.value.add(`${name}()`);
+          if (this.keyDepth && !this.hashDepth) this.keyedSeen.add(`${name}()`);
           break;
         }
         if (name === "ownPublicKey") {
@@ -165,6 +193,9 @@ class ConstraintScanner {
       }
       default:
         if (e.kind === "binary" && RELATIONAL.has(e.op)) out.relational = true;
+        if (e.kind === "binary" && ARITH.has(e.op) && !this.hashDepth) {
+          for (const side of [e.left, e.right]) for (const w of this.leaves(side, env, empty(), depth + 1).value) if (w.endsWith("()")) this.quantity.add(w);
+        }
         for (const x of children(e)) this.leaves(x, env, out, depth + 1);
     }
     return out;
@@ -210,7 +241,11 @@ class ConstraintScanner {
         }
         if (e.callee.kind === "member") {
           const f = this.rootField(e.callee.object);
-          if (f && !LEDGER_READS.has(e.callee.property)) out.sinks.push({ label: f, leaves: e.args.map((a) => this.leaves(a, local)).reduce(merge, empty()) });
+          if (f && !LEDGER_READS.has(e.callee.property)) {
+            // the first argument of insert/remove on a map or set picks the entry
+            if (["insert", "remove", "insertDefault"].includes(e.callee.property) && e.args[0]) for (const w of this.leaves(e.args[0], local).open) if (w.endsWith("()")) this.keyedSeen.add(w);
+            out.sinks.push({ label: f, leaves: e.args.map((a) => this.leaves(a, local)).reduce(merge, empty()) });
+          }
           continue;
         }
         const helper = this.ctx.circuits.get(name);
@@ -236,6 +271,7 @@ function merge(a: Leaves, b: Leaves): Leaves {
     relational: a.relational || b.relational,
     membership: a.membership || b.membership,
     open: new Set([...a.open, ...b.open]),
+    value: new Set([...a.value, ...b.value]),
   };
 }
 
@@ -311,7 +347,14 @@ function moduleCircuits(program: Program): Set<string> {
 
 const unknowns = (l: Leaves) => [...l.witnesses, ...l.params];
 
-export function constraintMap(program: Program): CircuitConstraints[] {
+/** The role of every witness, from how all exported circuits use it. */
+export function witnessRoles(program: Program): Map<string, WitnessRole> {
+  const roles = new Map<string, WitnessRole>();
+  for (const c of constraintMap(program, roles)) void c;
+  return roles;
+}
+
+export function constraintMap(program: Program, roles?: Map<string, WitnessRole>): CircuitConstraints[] {
   const ctx: Ctx = { ledger: new Set(), witnesses: new Set(), circuits: new Map(), enums: new Set() };
   collect(program.decls, ctx);
   const inModule = moduleCircuits(program);
@@ -321,6 +364,18 @@ export function constraintMap(program: Program): CircuitConstraints[] {
     const scanner = new ConstraintScanner(ctx, new Set(c.params.map((p) => p.name)));
     const found = { checks: [] as Check[], sinks: [] as Sink[], coins: [] as Leaves[] };
     scanner.scan(c.body, new Map(), found, [c.name], true);
+    if (roles) {
+      const role = (w: string) => {
+        const name = w.slice(0, -2);
+        const r = roles.get(name) ?? { quantity: false, hashed: false, publishedRaw: false, keyed: false };
+        roles.set(name, r);
+        return r;
+      };
+      for (const w of scanner.quantity) role(w).quantity = true;
+      for (const w of scanner.hashedSeen) role(w).hashed = true;
+      for (const w of scanner.keyedSeen) role(w).keyed = true;
+      for (const sk of found.sinks) for (const w of sk.leaves.open) if (w.endsWith("()")) role(w).publishedRaw = true;
+    }
 
     const names = new Set<string>(c.params.map((p) => p.name));
     for (const x of [...found.checks.map((k) => k.leaves), ...found.sinks.map((k) => k.leaves)]) for (const w of x.witnesses) names.add(w);

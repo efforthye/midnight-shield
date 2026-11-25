@@ -17,7 +17,8 @@ export function isSdkFile(file: string): boolean {
 /** Test files use fake secrets and fake remote servers on purpose, so SDK checks skip them. */
 export function isTestFile(file: string): boolean {
   const f = file.split("\\").join("/");
-  return /(^|\/)(test|tests|__tests__|__mocks__)\//.test(f) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(f);
+  // test/…, *.test.ts, and scripts named test-*.js or test_*.js
+  return /(^|\/)(test|tests|__tests__|__mocks__)\//.test(f) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(f) || /(^|\/)test[-_][^/]*\.[cm]?[jt]sx?$/.test(f);
 }
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]", "host.docker.internal", "proof-server"]);
@@ -114,6 +115,7 @@ function lintSdkTokens(tokens: Token[]): RawFinding[] {
         if (next === "." && SAFE_PROPERTIES.has(after)) continue; // secret.kind, seed.length: metadata only
         if (next === "(") continue; // isSecret(...): a function, not the value
         if (inner[k - 1]?.value === "typeof") continue; // typeof seed: the type, not the value
+        if (next === "?" || next === "&&") continue; // process.env.SEED ? 'set' : …: whether it is set, not its value
         if (!secrets.includes(tok.value)) secrets.push(tok.value);
       }
       if (secrets.length) {
@@ -234,12 +236,18 @@ const IDB_METHODS = new Set(["put", "add", "set", "setItem"]);
 function indexedDbStorage(tokens: Token[]): RawFinding[] {
   const out: RawFinding[] = [];
   const usesIdbKeyval = tokens.some((x) => x.kind === "string" && /idb-keyval/.test(x.value));
+  // const store = providers.privateStateProvider: Midnight's own private state store, encrypted by design
+  const providerNames = new Set<string>();
+  for (let i = 1; i + 2 < tokens.length; i++) {
+    if (tokens[i].kind !== "ident" || tokens[i + 1].value !== "=" || !["const", "let", "var"].includes(tokens[i - 1].value)) continue;
+    for (let j = i + 2; j < tokens.length && j < i + 12 && tokens[j].value !== ";"; j++) if (/privateStateProvider/i.test(tokens[j].value)) providerNames.add(tokens[i].value);
+  }
   for (let i = 0; i + 3 < tokens.length; i++) {
     const t = tokens[i];
     let open = -1;
     if (t.kind === "ident" && IDB_OBJECT.test(t.value) && tokens[i + 1].value === "." && IDB_METHODS.has(tokens[i + 2].value) && tokens[i + 3].value === "(") open = i + 3;
     else if (t.kind === "ident" && (t.value === "set" || t.value === "setMany") && tokens[i - 1]?.value !== "." && tokens[i + 1].value === "(" && usesIdbKeyval) open = i + 1;
-    if (open === -1) continue;
+    if (open === -1 || providerNames.has(t.value) || /privateStateProvider/i.test(t.value)) continue;
     const parts: Token[] = [];
     for (let j = open, depth = 0; j < tokens.length; j++) {
       const v = tokens[j].value;
@@ -336,7 +344,8 @@ function insecureRandomness(tokens: Token[]): RawFinding[] {
       // `if (crypto.getRandomValues) … else Math.random()`: a fallback for environments without crypto
       const fallback = (k: number) => tokens.slice(Math.max(0, k - 40), k).some((t) => t.value === "getRandomValues" || t.value === "randomBytes") && tokens.slice(Math.max(0, k - 30), k).some((t) => t.value === "else");
       const direct = isMathRandom(i) && !fallback(i);
-      const viaName = pass === 1 && tokens[i].kind === "ident" && tainted.has(tokens[i].value) && tokens[i + 1]?.value !== "=" && tokens[i - 1]?.value !== "const" && tokens[i - 1]?.value !== "let" && tokens[i - 1]?.value !== "function";
+      const viaName = pass === 1 && tokens[i].kind === "ident" && tainted.has(tokens[i].value) && tokens[i + 1]?.value !== "=" && tokens[i + 1]?.value !== ":" && tokens[i - 1]?.value !== "const" && tokens[i - 1]?.value !== "let" && tokens[i - 1]?.value !== "function";
+      // (`temperature: number` is a parameter or an object key that happens to share the tainted name, not the value)
       if (!(pass === 0 ? direct : viaName)) continue;
       const target = assignedName(tokens, i);
       if (!target) continue;

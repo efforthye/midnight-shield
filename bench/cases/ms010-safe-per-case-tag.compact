@@ -1,0 +1,17 @@
+// expect: none
+// note: the tag includes the case id, so it differs per case by design
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger cases: Map<Bytes<32>, Bytes<32>>;
+export ledger messages: Map<Bytes<32>, Bytes<32>>;
+witness secretKey(): Bytes<32>;
+circuit tag(sk: Bytes<32>, caseId: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "b:tag:"), caseId, sk]);
+}
+export circuit open(caseId: Bytes<32>): [] {
+  cases.insert(disclose(caseId), disclose(tag(secretKey(), caseId)));
+}
+export circuit reply(caseId: Bytes<32>): [] {
+  messages.insert(disclose(caseId), disclose(tag(secretKey(), caseId)));
+}

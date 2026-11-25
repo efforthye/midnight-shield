@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONFIG_FILE, ConfigError, DEFAULT_CONFIG, loadConfig, withPreset, type Config, type PresetName } from "./config.js";
@@ -11,6 +11,9 @@ import { PluginError, type CustomRule } from "./plugins.js";
 import { VERSION, formatAccess, formatAccessMarkdown, formatConstraints, formatConstraintsMarkdown, formatDisclosures, formatDisclosuresMarkdown, formatJson, formatMarkdown, formatSarif, formatText } from "./reporters.js";
 import { badgeJson } from "./badge.js";
 import { compareContracts, formatUpgradeMarkdown, formatUpgradeText, type FileUpgrade } from "./upgrade.js";
+import { findCompiledDir, formatExploitText, runExploits, type ExploitResult } from "./exploit.js";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { createSnapshot, diffIsEmpty, diffSnapshots, formatDiffMarkdown, formatDiffText, readSnapshot } from "./privacy-diff.js";
 import { CONFIDENCE_ORDER, RULES, SUPPORTED_LANGUAGE, RULES_BY_ID, SEVERITY_ORDER, type Confidence, type Severity } from "./rules.js";
 
@@ -21,6 +24,10 @@ Tested with Compact language ${SUPPORTED_LANGUAGE.min}–${SUPPORTED_LANGUAGE.ma
 Usage:
   midnight-shield [paths...] [options]     scan files and folders (default: .)
   midnight-shield explain <RULE>           show a rule's documentation
+  midnight-shield exploit <file.compact>   try to bypass every flagged check in the compiled
+                                           contract (Compact runtime simulator): reports
+                                           confirmed bypasses with a script that reproduces
+                                           each (--compiled <dir>, --runtime <dir>, -o <dir>)
   midnight-shield upgrade <old> <new>      compare two versions of a contract (files or
                                            folders): ledger layout, circuit and witness
                                            signatures, and guards that got weaker
@@ -140,6 +147,41 @@ function diffCommand(paths: string[], format: string, output: string | undefined
   if (level !== "none" && diff.newFindings.some((f) => SEVERITY_ORDER.indexOf(f.severity) <= SEVERITY_ORDER.indexOf(level))) process.exitCode = 1;
 }
 
+async function exploitCommand(paths: string[], format: string, output: string | undefined, compiledDir: string | undefined, runtimeDir: string | undefined, color: boolean): Promise<void> {
+  if (paths.length !== 1 || !paths[0].endsWith(".compact")) fail("exploit needs one contract: midnight-shield exploit contracts/my.compact [--compiled dir]");
+  const file = resolve(paths[0]);
+  if (!existsSync(file)) fail(`not found: ${paths[0]}`);
+  let compiled = compiledDir ? resolve(compiledDir) : findCompiledDir(file);
+  let tmp: string | undefined;
+  if (!compiled) {
+    // compile without proving keys; needs the Compact toolchain on PATH
+    tmp = mkdtempSync(join(tmpdir(), "midnight-shield-compile-"));
+    const r = spawnSync("compact", ["compile", "--skip-zk", file, tmp], { encoding: "utf8" });
+    if (r.error || r.status !== 0) {
+      rmSync(tmp, { recursive: true, force: true });
+      fail(`no compiled contract found next to ${paths[0]}, and \`compact compile\` ${r.error ? "is not installed" : `failed: ${(r.stderr || r.stdout).trim().split("\n")[0]}`}. Compile it first, or pass --compiled <dir> (the folder compact compile wrote).`);
+    }
+    compiled = tmp;
+  }
+  let results: ExploitResult[];
+  try {
+    results = await runExploits(readFileSync(file, "utf8"), { compiledDir: compiled, runtimeFrom: runtimeDir ?? dirname(file), file, resolver: fileImportResolver() });
+  } catch (e) {
+    fail((e as Error).message);
+  } finally {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+  }
+  if (output && format === "text") {
+    // -o <dir>: one reproduction script per confirmed bypass
+    mkdirSync(output, { recursive: true });
+    for (const r of results!) if (r.repro) writeFileSync(join(output, `exploit-${r.circuit}.${r.repro.includes("require(") ? "cjs" : "mjs"}`), r.repro + "\n");
+  }
+  const report = format === "json" ? JSON.stringify({ tool: "midnight-shield", version: VERSION, file: paths[0], results: results! }, null, 2) : formatExploitText(results!, { color: color && !output });
+  if (output && format !== "text") writeFileSync(output, report + "\n");
+  else process.stdout.write(report + "\n");
+  if (results!.some((r) => r.status === "confirmed")) process.exitCode = 1;
+}
+
 function upgradeCommand(paths: string[], format: string, output: string | undefined, failOn: Severity | "none" | undefined, color: boolean): void {
   if (paths.length !== 2) fail("upgrade needs two versions: midnight-shield upgrade old/ new/ (files or folders)");
   const [oldPath, newPath] = paths.map((p) => resolve(p));
@@ -172,6 +214,8 @@ function upgradeCommand(paths: string[], format: string, output: string | undefi
 async function main(argv: string[]): Promise<void> {
   const paths: string[] = [];
   let format = "text";
+  let compiledDir: string | undefined;
+  let runtimeDir: string | undefined;
   let output: string | undefined;
   let configPath: string | undefined;
   let failOn: Severity | "none" | undefined;
@@ -293,6 +337,12 @@ async function main(argv: string[]): Promise<void> {
       case "--no-code-frame":
         codeFrame = false;
         break;
+      case "--compiled":
+        compiledDir = value();
+        break;
+      case "--runtime":
+        runtimeDir = value();
+        break;
       case "--no-sdk":
         sdk = false;
         break;
@@ -301,7 +351,7 @@ async function main(argv: string[]): Promise<void> {
         break;
       default:
         if (a.startsWith("-")) fail(`unknown option ${a}`);
-        if (!command && paths.length === 0 && (a === "explain" || a === "snapshot" || a === "diff" || a === "upgrade")) command = a;
+        if (!command && paths.length === 0 && (a === "explain" || a === "snapshot" || a === "diff" || a === "upgrade" || a === "exploit")) command = a;
         else paths.push(a);
     }
   }
@@ -331,6 +381,7 @@ async function main(argv: string[]): Promise<void> {
   if (command === "explain") return explain(paths[0], plugins);
   if (command === "diff") return diffCommand(paths, format, output, failOn);
   if (command === "upgrade") return upgradeCommand(paths, format, output, failOn, color);
+  if (command === "exploit") return exploitCommand(paths, format, output, compiledDir, runtimeDir, color);
 
   const baselineFile = baselinePath ?? (config.baseline ? resolve(configDir, config.baseline) : undefined);
   let baseline: Set<string> | undefined;

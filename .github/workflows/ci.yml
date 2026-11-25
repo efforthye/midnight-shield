@@ -81,6 +81,19 @@ jobs:
           echo "$((total - failed)) of $total benchmark files compile."
           echo "" >> "$GITHUB_STEP_SUMMARY"; echo "**$((total - failed)) of $total compile.**" >> "$GITHUB_STEP_SUMMARY"
           test "$failed" -eq 0
+      # Runs the forged calls in the Compact runtime against the compiled benchmark: every
+      # attackable case should be confirmed, and no safe case may ever be.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Reproduce attacks on the benchmark
+        run: |
+          npm ci
+          npm run build
+          # the runtime version the compiler expects
+          ver=$(grep -ohP "checkRuntimeVersion\('\K[^']+" build/vulnerable/contract/index.js | head -1)
+          npm install --no-save "@midnight-ntwrk/compact-runtime@$ver"
+          node scripts/exploit-bench.mjs build/bench
 
   # The web playground and the VS Code extension must build.
   build-extras:

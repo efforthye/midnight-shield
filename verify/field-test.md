@@ -35,8 +35,9 @@ Also changed: an `assertOnlyOwner()` helper called from twelve circuits was repo
 | After the fixes above | 129 | 128 | 1 (the invalid file) |
 | With the access map rules (MS035, MS036) | 131 | 130 | 1 (the invalid file) |
 | With the witness constraint rule (MS037) | 147 | 146 | 1 (the invalid file) |
+| After the blind-test fixes (MS118 now low severity, `test-*.js` scripts treated as tests) | 139 | 138 | 1 (the invalid file) |
 
-This second number is measured on the same code the fixes came from, so it shows the fixes work, not how the tool does on new code. The next field test, on projects not in this set, will say that.
+These later numbers are measured on the same code the fixes came from, so they show the fixes work, not how the tool does on new code. The [blind test](blind-test.md) is that measurement: 62% on the first scan of 30 projects the tool had never seen. Every verdict above is listed in [field-verdicts.md](field-verdicts.md).
 
 By rule (current): MS037 16 · MS102 15 · MS103 14 · MS120 13 · MS009 12 · MS104 12 · MS013 11 · MS113 8 · MS002 7 · MS118 7 · MS001 6 · MS101 6 · MS007 4 · MS008 4 · MS034 4 · MS019 3 · MS020 3 · MS036 2.
 
