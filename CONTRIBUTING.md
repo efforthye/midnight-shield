@@ -10,7 +10,7 @@ Open an issue with:
 - what Midnight Shield reported (or did not report),
 - what you expected and why.
 
-False positives are treated as bugs. A rule that cries wolf gets ignored.
+False positives are treated as bugs.
 
 ## Development
 
