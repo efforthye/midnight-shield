@@ -1,0 +1,11 @@
+// expect: MS037
+// note: price, collateral and amount are all chosen by the prover
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger debt: Uint<128>;
+witness price(): Uint<128>;
+export circuit borrow(amount: Uint<64>, collateral: Uint<64>): [] {
+  assert(disclose(collateral) * price() >= disclose(amount), "undercollateralized");
+  debt = disclose(amount);
+}

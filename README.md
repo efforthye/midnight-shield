@@ -10,7 +10,7 @@ Catch security and privacy bugs before you deploy: in your terminal, your editor
 [![CI](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/efforthye/midnight-shield/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)
-![Rules](https://img.shields.io/badge/rules-57-purple)
+![Rules](https://img.shields.io/badge/rules-58-purple)
 ![Tests](https://img.shields.io/badge/tests-367%20passing-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage%20(src)-96%25-brightgreen)
 [![npm](https://img.shields.io/npm/v/midnight-shield?color=orange)](https://www.npmjs.com/package/midnight-shield)
@@ -272,6 +272,7 @@ npx midnight-shield contracts/ --format json                    # scripts and AI
 | [MS034](docs/rules/MS034.md) | `untrusted-state-dependency` | 🔴 High | medium | A ledger field any caller can set is trusted by another circuit in a check or a token transfer |
 | [MS035](docs/rules/MS035.md) | `inconsistent-guard` | 🔴 High | medium | One circuit checks the caller before changing a field, another overwrites the same field with no check |
 | [MS036](docs/rules/MS036.md) | `claimed-identity` | 🟣 Critical | medium | An "owner check" compares a stored id with a parameter; the ledger is public, so anyone can pass the stored id |
+| [MS037](docs/rules/MS037.md) | `self-satisfiable-check` | 🔴 High | medium | An assert compares only values the prover chooses (witness results, parameters), so it can always be made to pass |
 
 **DApp code (TypeScript / JavaScript)**
 
@@ -341,6 +342,34 @@ For every exported circuit it lists the ledger fields it changes, the tokens it 
 | `one-time`, `state`, `inputs` | Limits how often, when or how much, not who |
 
 **BYPASSABLE** means every caller check on the circuit is one anyone can pass. Two rules are built on the map: MS035 (a field one circuit protects and another changes freely) and MS036 (an owner check that compares with a parameter). JSON and Markdown are available with `--format json|markdown`.
+
+## Witness constraint report
+
+A proof is only as strong as the checks that tie the prover's values to something the prover does not choose. The witness report lists every prover-chosen value (witness results and circuit parameters), where it ends up, and what constrains it:
+
+```bash
+npx midnight-shield contracts/ --print witnesses
+```
+
+```text
+contracts/hiring.compact
+  circuit             prover-chosen value     status     reaches                           constrained by
+  proveCredential     localCredentialId()     anchored   -                                 ledger l.169
+  proveRegistered     localSecretKey()        secret     return value (hashed)             -
+  proveMinRating      localRating()           CIRCULAR   -                                 prover values only l.129
+                      threshold               CIRCULAR   return value                      prover values only l.129
+```
+
+| Status | Means |
+| --- | --- |
+| `anchored` | Compared with ledger state, opened through a hash or signature, checked for membership, or received as a coin |
+| `bounded` | Limited by a constant only |
+| `secret` | Only used inside hashes and commitments, as a secret should be |
+| `input` | A parameter used as given |
+| `CIRCULAR` | Only compared with other prover-chosen values, so the check can always be satisfied (MS037) |
+| `FREE` | A witness value that reaches state or a transfer with no check at all (MS002) |
+
+Values are followed through local constants, helper circuits (parameters bound to the caller's arguments, return values followed back), and comparisons inside helpers. This is the Compact counterpart of the under-constrained analyses of Circomspect and Picus for Circom.
 
 ## How it works
 
@@ -492,7 +521,7 @@ Accuracy is measured two ways.
 
 **Field test on third-party code.** 36 public Midnight projects found through GitHub search, scanned with default settings, every medium-or-worse finding checked against the source. On the first scan, before any change for this test, **121 of 134 findings were real issues (90% precision)**. The 13 false positives were fixed; each one and its fix is listed in [verify/field-test.md](verify/field-test.md), along with why the official examples and OpenZeppelin code show so few findings (some patterns, such as Boolean witnesses, never occur there).
 
-**Labeled benchmark.** 180 labeled files: 124 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
+**Labeled benchmark.** 188 labeled files: 128 expected findings reported, 0 missed, 0 false positives. For each rule: the plain vulnerable pattern, variants written to slip past it (aliases, helper circuits, structs, negations, wrappers, other names), and safe code that looks similar. The ten core rules get the most cases:
 
 | Rule | Expected findings | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -511,7 +540,7 @@ All rules together:
 
 | Rule | Found | Missed | False positives | Precision | Recall |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| **All** | **124** | **0** | **0** | **100%** | **100%** |
+| **All** | **128** | **0** | **0** | **100%** | **100%** |
 
 CI also compiles every Compact case with the real Compact compiler and lists any that do not compile in the job summary. Each rule's page has a **Known limits** section.
 
@@ -527,6 +556,7 @@ CI also compiles every Compact case with the real Compact compiler and lists any
 | `role-key-from-public-key.ts` | MS120 | found | report pending |
 | `secret-key-as-map-key.compact` | MS007 | found | report pending |
 | `staking-claimed-owner-id.compact` | MS036 | found | report pending |
+| `claimed-rating-threshold.compact` | MS037 | found | report pending |
 
 **Found in a public project.** Scanning [MeshJS/midnight-contracts-wizard](https://github.com/MeshJS/midnight-contracts-wizard) (contract templates that developers copy, commit `a1f868d`) found access checks that a caller can bypass. Each was checked by hand against the source. [▶ See the scan in the playground](https://efforthye.github.io/midnight-shield/#repo=MeshJS/midnight-contracts-wizard/tree/a1f868d/packages/contract/src) (also under **Examples… → Real projects**). Reported to the maintainers in [MeshJS/midnight-contracts-wizard#1](https://github.com/MeshJS/midnight-contracts-wizard/issues/1).
 
@@ -579,7 +609,7 @@ Rules were checked against the detector lists of [Slither](https://github.com/cr
 | Statements with no effect | `redundant-statements` | MS029 |
 | Hidden text-direction characters | `rtlo` | MS030 |
 | Arithmetic that wraps | field arithmetic (Circomspect) | MS031 |
-| Unconstrained private inputs | under-constrained signals (Circomspect) | MS002, MS009 |
+| Unconstrained private inputs | under-constrained signals (Circomspect, Picus) | MS002, MS009, MS037, `--print witnesses` |
 | Compiler version | `solc-version`, `pragma` | MS006 |
 
 Detectors for things Compact does not have (reentrancy, `delegatecall`, gas, inline assembly, inheritance, ERC interfaces, events) have no counterpart. On top of the shared bug classes, about half of the rules cover Midnight's privacy model, which the other tools do not deal with: disclosure of secrets (MS003, MS007, MS014, MS021, MS023), nullifiers (MS008, MS018), Merkle membership (MS009, MS010), transient hashes (MS012), and the DApp side where witnesses and private state live (MS101–MS120).
@@ -599,8 +629,8 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 
 | Check | What it proves | Command |
 | --- | --- | --- |
-| **Unit and integration tests** (400 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
-| **Benchmark** | 180 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
+| **Unit and integration tests** (415 tests) | Lexer, parser, every rule (flagged and not-flagged cases), suggested fixes, privacy diff, badge, reporters, CLI, baselines, plugins | `npm test`, `npm run coverage` |
+| **Benchmark** | 188 labeled files: the plain vulnerable pattern for each rule, variants written to evade it, look-alike safe code, and minimal reproductions of real bugs. Precision and recall per rule in [bench/RESULTS.md](bench/RESULTS.md); CI also compiles every Compact case with the real compiler | `npm run bench` |
 | **Fuzz tests** | Random token edits, truncations, random bytes, deep nesting and recursive circuits never crash the analyzer | part of `npm test` |
 | **Corpus verification** | 1,052 real files (Compact and TypeScript) at pinned commits: zero parse errors, results match a reviewed baseline, and every medium-or-worse finding is checked by hand and listed with the reason in [`verify/reviewed.json`](verify/reviewed.json) | `npm run verify` |
 | **Real compiler** | The example contracts compile with the official `compact` toolchain | CI job `compile-examples` |
@@ -616,8 +646,7 @@ On other chains, the same role is played by [Slither](https://github.com/crytic/
 - [x] **v0.4** Disclosure map, confidence, baselines, Markdown, plugins, autofix, TypeScript checks, playground, VS Code extension, npm package
 - [x] **v0.5** Repository and folder scanning in the playground, project logo, GitHub Packages
 - [x] **v0.6** Privacy diff on pull requests, status badge, suggested fixes, accuracy benchmark, field test, presets, ignore comments with a reason, witness implementations checked against the contract (MS121)
-- [x] **Next** Access map (`--print access`) with imported modules resolved, inconsistent guards (MS035), claimed identities (MS036)
-- [ ] Witness constraint report: what each prover-chosen value can reach, and what limits it
+- [x] **Next** Access map (`--print access`) with imported modules resolved, inconsistent guards (MS035), claimed identities (MS036), witness constraint report (`--print witnesses`) and self-satisfiable checks (MS037)
 - [ ] Upgrade check: compare two versions of a contract for changes that break deployed state or DApps
 - [ ] MCP server and language server
 - [ ] VS Code Marketplace release

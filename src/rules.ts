@@ -289,6 +289,13 @@ export const RULES: RuleMeta[] = [
     summary: "An access check compares a stored owner or admin id with a circuit parameter. Ledger values are public, so anyone can pass the stored id.",
   },
   {
+    id: "MS037",
+    name: "self-satisfiable-check",
+    severity: "high",
+    confidence: "medium",
+    summary: "An assert compares only values the prover chooses (witness results and parameters) with each other, so the prover can always make it pass.",
+  },
+  {
     id: "MS101",
     name: "remote-proof-server",
     severity: "critical",

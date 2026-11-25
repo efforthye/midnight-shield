@@ -96,7 +96,7 @@ describe("CLI", () => {
     const clean = run(["c.compact", "--baseline", "b.json"], dir);
     assert.equal(clean.code, 0);
     assert.match(clean.stdout, /No findings/);
-    assert.match(run(["c.compact", "--baseline", "b.json", "--show-suppressed"], dir).stdout, /Suppressed \(29\)/);
+    assert.match(run(["c.compact", "--baseline", "b.json", "--show-suppressed"], dir).stdout, /Suppressed \(30\)/);
   });
 
   it("saves snapshots and diffs them, failing only on new findings", () => {

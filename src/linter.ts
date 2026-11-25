@@ -1,3 +1,4 @@
+import { checkSelfSatisfiable, constraintMap, type CircuitConstraints } from "./constraints.js";
 import { accessMap, checkClaimedIdentity, checkInconsistentGuards, type CircuitAccess } from "./access.js";
 import { Analyzer, type DisclosureEvent, type ImportResolver, type RawFinding } from "./analyzer.js";
 import type { Program } from "./ast.js";
@@ -190,6 +191,9 @@ function analyze(source: string, file: string, options: LintOptions): Analysis {
   const reportedWrites = new Set(raw.filter((f) => f.ruleId === "MS011" || f.ruleId === "MS034").map((f) => f.loc.line));
   const imports = { resolver: options.resolver, file: options.absolutePath };
   raw.push(...checkClaimedIdentity(program, raw, imports));
+  // MS013 already reports an assert on a witness's Boolean
+  const witnessAsserts = new Set(raw.filter((f) => f.ruleId === "MS013").map((f) => f.loc.line));
+  raw.push(...checkSelfSatisfiable(program).filter((f) => !witnessAsserts.has(f.loc.line)));
   raw.push(...checkInconsistentGuards(program, raw, imports).filter((f) => !reportedWrites.has(f.loc.line)));
   for (const rule of options.plugins ?? []) raw.push(...runCustomRule(rule, file, source, program));
   return { program, analyzer, raw };
@@ -271,6 +275,16 @@ export function mapAccess(source: string, file = "contract.compact", options: Li
     const lines = new Set([...c.guards.map((g) => g.line), ...c.writes.map((w) => w.line), ...c.tokens.map((t) => t.line)]);
     return { ...c, file, findings: [...new Set(raw.filter((f) => lines.has(f.loc.line) && f.ruleId !== "MS000" && f.ruleId !== "MS033").map((f) => f.ruleId))].sort() };
   });
+}
+
+export interface ConstraintEntry extends CircuitConstraints {
+  file: string;
+}
+
+/** The witness constraint report of a Compact file: what each prover-chosen value reaches, and what constrains it. */
+export function mapConstraints(source: string, file = "contract.compact"): ConstraintEntry[] {
+  if (isSdkFile(file)) return [];
+  return constraintMap(parse(source)).map((c) => ({ ...c, file }));
 }
 
 export function mapDisclosures(source: string, file = "contract.compact", options: LintOptions = {}): DisclosureEntry[] {

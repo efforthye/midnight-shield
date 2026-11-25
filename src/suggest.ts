@@ -330,6 +330,13 @@ export function suggestFix(ruleId: string, message: string, line: string): Sugge
         note: `Store the hash of a secret in '${field}' (set it in the constructor from the same hash)${param ? ` and drop the '${param}' parameter` : ""}. Only whoever knows the secret can produce a proof that passes.`,
       };
     }
+    case "MS037": {
+      return {
+        before,
+        after: [`${ind}// tie one of the values to the ledger first, for example a stored or attested value:`, `${ind}assert(value == storedValue.lookup(key), "not the recorded value");`, line],
+        note: "A check between prover-chosen values only proves the prover can do arithmetic. Anchor at least one side in ledger state, a constant, or a commitment the prover opens in the circuit.",
+      };
+    }
     case "MS101": {
       const after = line.replace(/(["'])(?:https?|wss?):\/\/[^"']*\1/, 'process.env.MIDNIGHT_PROOF_SERVER ?? "http://localhost:6300"');
       return after === line ? undefined : { before, after: [after], note: "Run the proof server on the user's own machine." };

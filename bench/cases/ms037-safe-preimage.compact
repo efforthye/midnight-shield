@@ -1,0 +1,11 @@
+// expect: none
+// note: knowledge of a hash preimage is a real proof
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger registered: Counter;
+witness secretKey(): Bytes<32>;
+export circuit prove(publicId: Bytes<32>): [] {
+  assert(persistentHash<Vector<2, Bytes<32>>>([pad(32, "b:id:"), secretKey()]) == publicId, "not yours");
+  registered.increment(1);
+}

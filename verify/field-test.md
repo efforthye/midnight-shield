@@ -34,10 +34,11 @@ Also changed: an `assertOnlyOwner()` helper called from twelve circuits was repo
 | --- | ---: | ---: | ---: |
 | After the fixes above | 129 | 128 | 1 (the invalid file) |
 | With the access map rules (MS035, MS036) | 131 | 130 | 1 (the invalid file) |
+| With the witness constraint rule (MS037) | 147 | 146 | 1 (the invalid file) |
 
 This second number is measured on the same code the fixes came from, so it shows the fixes work, not how the tool does on new code. The next field test, on projects not in this set, will say that.
 
-By rule (current): MS102 15 · MS103 14 · MS120 13 · MS009 12 · MS104 12 · MS013 11 · MS113 8 · MS002 7 · MS118 7 · MS001 6 · MS101 6 · MS007 4 · MS008 4 · MS034 4 · MS019 3 · MS020 3 · MS036 2.
+By rule (current): MS037 16 · MS102 15 · MS103 14 · MS120 13 · MS009 12 · MS104 12 · MS013 11 · MS113 8 · MS002 7 · MS118 7 · MS001 6 · MS101 6 · MS007 4 · MS008 4 · MS034 4 · MS019 3 · MS020 3 · MS036 2.
 
 Real issues were found in 25 of the 36 projects. The ones that matter most:
 
@@ -61,6 +62,22 @@ Real issues were found in 25 of the 36 projects. The ones that matter most:
 Every BYPASSABLE circuit was checked against the source: all 23 are real (ownPublicKey() owner checks behind an imported Ownable module, witness results, unbound Merkle paths, and two "owner only" checks that compare the public owner id with a parameter, now MS036). Reading imported modules matters here: eight of the 23 call an `assertOnlyOwner()` whose weakness is only visible inside the module.
 
 MS035 (a field one circuit protects and another changes with no check) found nothing in these projects. Its benchmark cases and the official corpus show no false positives either; it is kept because the pattern (a later "reset" or "migrate" circuit that forgot the check) is a classic one on other chains.
+
+## Witness constraint report on the same projects
+
+`--print witnesses` follows every witness result into the ledger, transfers and checks. Of the 226 witness values in the 36 projects (74 in the official corpus):
+
+| Status | Third-party projects | Official examples and OpenZeppelin |
+| --- | ---: | ---: |
+| anchored (tied to ledger, hash, signature, membership) | 150 | 66 |
+| secret (only used hashed) | 25 | 3 |
+| bounded by a constant | 3 | 4 |
+| CIRCULAR (only compared with other prover values) | 28 | 0 |
+| FREE (reaches state or a transfer unchecked) | 20 | 1 |
+
+The 28 circular values are the 16 new MS037 findings (all real: "prove your rating is at least the threshold" with the rating from a witness, a salary band and a jurisdiction checked only against parameters, a membership secret compared with a parameter) and the Boolean witness asserts MS013 already reports. MS037 was the first rule to see the first group: no other rule looks at a check whose inputs never touch state.
+
+Known limit: a signature check counts as anchoring even when the public key is itself a witness. The official `verify-sequential-secp` performance example does that; it is a benchmark, not an access check.
 
 ## Why the official code has no high findings
 

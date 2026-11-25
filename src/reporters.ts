@@ -1,5 +1,6 @@
 import type { GuardKind, Who } from "./access.js";
-import type { AccessEntry, DisclosureEntry, Finding } from "./linter.js";
+import type { AccessEntry, ConstraintEntry, DisclosureEntry, Finding } from "./linter.js";
+import type { Constraint, InputReport } from "./constraints.js";
 import { suggestionDiff } from "./suggest.js";
 import { RULES, SEVERITY_ORDER, ruleDocUrl, type RuleMeta, type Severity } from "./rules.js";
 
@@ -429,5 +430,87 @@ export function formatAccessMarkdown(entries: AccessEntry[]): string {
     out.push(`| \`${a.file}\` | ${mdEscape(a.module ? `${a.name} (module)` : a.name)} | ${WHO_LABEL[a.who]} | ${mdEscape(accessWrites(a))} | ${mdEscape(accessTokens(a))} | ${mdEscape(describeGuards(a))} | ${a.findings.join(", ")} |`);
   }
   if (entries.length) out.push("", accessSummary(entries));
+  return out.join("\n");
+}
+
+const SHORT_CONSTRAINT: Record<Constraint, string> = {
+  "tied to ledger": "ledger",
+  "hash or signature": "hash",
+  "bounded by constant": "constant",
+  membership: "membership",
+  "coin value": "coin",
+  "only other prover values": "prover values only",
+};
+
+/** The strongest constraint on an input decides its status. */
+function inputStatus(i: InputReport): Status {
+  const kinds = new Set(i.constraints.map((c) => c.kind));
+  if (kinds.has("tied to ledger") || kinds.has("hash or signature") || kinds.has("membership") || kinds.has("coin value")) return "anchored";
+  if (kinds.has("bounded by constant")) return "bounded";
+  if (kinds.has("only other prover values")) return "circular";
+  if (i.hashedOnly) return "secret";
+  return i.kind === "witness" && i.reaches.length ? "free" : "input";
+}
+
+type Status = "anchored" | "bounded" | "circular" | "secret" | "input" | "free";
+const STATUS_LABEL: Record<Status, string> = { anchored: "anchored", bounded: "bounded", circular: "CIRCULAR", secret: "secret", input: "input", free: "FREE" };
+
+function describeConstraints(i: InputReport): string {
+  const groups = new Map<string, number[]>();
+  for (const c of i.constraints) {
+    const k = SHORT_CONSTRAINT[c.kind];
+    const list = groups.get(k) ?? [];
+    if (!list.includes(c.line)) list.push(c.line);
+    groups.set(k, list);
+  }
+  return [...groups].map(([k, lines]) => (k === "coin" ? k : `${k} l.${lines.join(", ")}`)).join(", ") || "-";
+}
+
+/** Inputs worth showing: anything that reaches state or a transfer, and anything checked. */
+const shownInputs = (c: ConstraintEntry) => c.inputs.filter((i) => i.reaches.length || i.constraints.length);
+
+export function formatConstraints(entries: ConstraintEntry[], options: { color?: boolean } = {}): string {
+  const color = options.color ?? true;
+  const c = (code: string, s: string) => (color ? code + s + RESET : s);
+  const lines: string[] = [];
+  let currentFile = "";
+  let free = 0;
+  let circular = 0;
+  for (const e of entries) {
+    const inputs = shownInputs(e);
+    if (!inputs.length) continue;
+    if (e.file !== currentFile) {
+      if (currentFile) lines.push("");
+      lines.push(c(BOLD + "\x1b[4m", e.file));
+      lines.push(c(DIM, `  ${"circuit".padEnd(20)}${"prover-chosen value".padEnd(24)}${"status".padEnd(11)}${"reaches".padEnd(34)}constrained by`));
+      currentFile = e.file;
+    }
+    inputs.forEach((i, n) => {
+      const st = inputStatus(i);
+      // a free parameter that only reaches state is ordinary input; a free witness is what MS002 is about
+      const loud = st === "free" || st === "circular";
+      if (st === "circular") circular++;
+      if (st === "free") free++;
+      const status = st === "anchored" ? c("\x1b[32m", STATUS_LABEL[st].padEnd(11)) : loud ? c("\x1b[31m", STATUS_LABEL[st].padEnd(11)) : STATUS_LABEL[st].padEnd(11);
+      const name = (n === 0 ? (e.module ? `${e.name} (module)` : e.name) : "").slice(0, 19).padEnd(20);
+      lines.push(`  ${name}${i.name.slice(0, 23).padEnd(24)}${status}${(i.reaches.join(", ") || "-").slice(0, 33).padEnd(34)}${describeConstraints(i)}`);
+    });
+  }
+  if (!lines.length) return "No prover-chosen values reach state, transfers or checks in these files.";
+  lines.push("");
+  lines.push(`${plural(free, "witness value")} reach state or a transfer with no check (FREE), ${plural(circular, "value")} only checked against other prover-chosen values (CIRCULAR).`);
+  lines.push(c(DIM, "anchored: tied to ledger state, a hash, a membership proof or a received coin. bounded: limited by a constant only. secret: only used hashed. input: a parameter used as given."));
+  return lines.join("\n");
+}
+
+export function formatConstraintsMarkdown(entries: ConstraintEntry[]): string {
+  const out = ["# Witness constraint report", "", "Every value the prover chooses (witness results and circuit parameters), where it ends up, and what constrains it.", ""];
+  out.push("| File | Circuit | Value | Status | Reaches | Constrained by |");
+  out.push("| --- | --- | --- | --- | --- | --- |");
+  for (const e of entries) {
+    for (const i of shownInputs(e)) {
+      out.push(`| \`${e.file}\` | ${mdEscape(e.name)} | \`${mdEscape(i.name)}\` | ${STATUS_LABEL[inputStatus(i)]} | ${mdEscape(i.reaches.join(", ") || "-")} | ${mdEscape(describeConstraints(i))} |`);
+    }
+  }
   return out.join("\n");
 }

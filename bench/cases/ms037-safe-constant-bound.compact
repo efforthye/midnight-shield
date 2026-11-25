@@ -1,0 +1,11 @@
+// expect: none
+// note: a constant bound; whether age() is honest is MS002 territory, not this rule
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger proofs: Counter;
+witness age(): Uint<8>;
+export circuit proveAdult(): [] {
+  assert(age() >= 18, "too young");
+  proofs.increment(1);
+}

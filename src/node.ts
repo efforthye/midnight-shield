@@ -5,7 +5,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { ImportResolver } from "./analyzer.js";
 import type { Program } from "./ast.js";
-import { lintSource, mapAccess, mapDisclosures, toFindings, type AccessEntry, type BaselineFile, type DisclosureEntry, type Finding, type LintOptions } from "./linter.js";
+import { lintSource, mapAccess, mapConstraints, mapDisclosures, toFindings, type AccessEntry, type ConstraintEntry, type BaselineFile, type DisclosureEntry, type Finding, type LintOptions } from "./linter.js";
 import { parse } from "./parser.js";
 import { isSdkFile, isTestFile } from "./sdk.js";
 import { linkWitnesses } from "./witness-link.js";
@@ -106,6 +106,10 @@ export function lintFiles(paths: string[], options: LintOptions = {}, cwd = proc
 
 export function mapAccessInFiles(paths: string[], options: LintOptions = {}, cwd = process.cwd()): AccessEntry[] {
   return eachFile(paths, options, cwd, (src, rel, opts) => mapAccess(src, rel, opts));
+}
+
+export function mapConstraintsInFiles(paths: string[], options: LintOptions = {}, cwd = process.cwd()): ConstraintEntry[] {
+  return eachFile(paths, options, cwd, (src, rel) => mapConstraints(src, rel));
 }
 
 export function mapDisclosuresInFiles(paths: string[], options: LintOptions = {}, cwd = process.cwd()): DisclosureEntry[] {

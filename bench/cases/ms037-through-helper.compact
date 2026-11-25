@@ -1,0 +1,12 @@
+// expect: MS037
+// note: the comparison is inside a helper circuit
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger members: Counter;
+witness secret(): Field;
+circuit same(a: Field, b: Field): Boolean { return a == b; }
+export circuit register(expected: Field): [] {
+  assert(same(secret(), expected), "wrong secret");
+  members.increment(1);
+}

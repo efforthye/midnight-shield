@@ -1,0 +1,12 @@
+// expect: MS037
+// note: the prover picks its own rating: the proof says nothing
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger proofs: Counter;
+witness localRating(): Uint<16>;
+export circuit proveMinRating(threshold: Uint<16>): [] {
+  const r = localRating();
+  assert(r >= threshold, "rating too low");
+  proofs.increment(1);
+}

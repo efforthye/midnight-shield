@@ -1,0 +1,12 @@
+// expect: none
+// note: the rating is read from the ledger
+pragma language_version >= 0.28.0;
+import CompactStandardLibrary;
+
+export ledger ratings: Map<Bytes<32>, Uint<16>>;
+export ledger proofs: Counter;
+witness myId(): Bytes<32>;
+export circuit proveMinRating(threshold: Uint<16>): [] {
+  assert(ratings.lookup(disclose(myId())) >= threshold, "rating too low");
+  proofs.increment(1);
+}
